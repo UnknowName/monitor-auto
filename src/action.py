@@ -45,35 +45,35 @@ class RecycleActionThread(_BaseActionThread):
 
 class NgxActionThread(_BaseActionThread):
     _DOWN_YAML_TMP = r"""
-  - hosts:
-    - {host}
-    gather_facts: False
-    tasks:
-    - name: {site} down {host}
-      lineinfile:
-        path: /etc/nginx/conf.d/{site}.conf
-        regexp: '(\s+?server\s+?{host}.*)'
-        line: '#\1'
-        backrefs: yes
+    - hosts:
+      - {host}
+      gather_facts: False
+      tasks:
+      - name: {site} down {host}
+        lineinfile:
+          path: /etc/nginx/conf.d/{site}.conf
+          regexp: '(\s+?server\s+?{host}.*)'
+          line: '#\1'
+          backrefs: yes
         
-    - name: Reload NGINX
-      shell: systemctl reload nginx || nginx -s reload
+      - name: Reload NGINX
+        shell: systemctl reload nginx || nginx -s reload
     """
 
     _UP_YAML_TMP = r"""
-  - hosts:
-    - {host}
-    gather_facts: False
-    tasks:
-    - name: {site}  Up {host}
-      lineinfile:
-        path: /etc/nginx/conf.d/{site}.conf
-        regexp: '#(\s+?server\s+?{host}.*)'
-        line: '\1'
-        backrefs: yes
+    - hosts:
+      - {host}
+      gather_facts: False
+      tasks:
+      - name: {site}  Up {host}
+        lineinfile:
+          path: /etc/nginx/conf.d/{site}.conf
+          regexp: '#(\s+?server\s+?{host}.*)'
+          line: '\1'
+          backrefs: yes
         
-    - name: Reload NGINX
-      shell: systemctl reload nginx || nginx -s reload
+      - name: Reload NGINX
+        shell: systemctl reload nginx || nginx -s reload
     """
 
     def start(self) -> None:
