@@ -76,12 +76,22 @@ class NgxActionThread(_BaseActionThread):
         shell: systemctl reload nginx || nginx -s reload
     """
 
+    def __init__(self, site: str, host: str, action: str):
+        Thread.__init__(self)
+        self.site = site
+        self.host = host
+        self.action = action
+
     def start(self) -> None:
-        ansible_playbook = self._create_task_yaml(self._DOWN_YAML_TMP, self.host, self.site)
+        if self.action == 'down':
+            _TASK_YAML = self._DOWN_YAML_TMP
+        else:
+            _TASK_YAML = self._UP_YAML_TMP
+        ansible_playbook = self._create_task_yaml(_TASK_YAML, self.host, self.site)
         stdout = self.execute_action(ansible_playbook)
         print(stdout)
 
 
 if __name__ == '__main__':
-    t = NgxActionThread("www.aaa.com", "128.0.100.170")
+    t = NgxActionThread("www.aaa.com", "128.0.100.170", 'down')
     t.start()
