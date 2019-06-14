@@ -36,11 +36,13 @@ class _AsyncCheckThread(Thread):
                 err_time = TOTAL[host][site]['err_time']
                 expire_time = err_time + (1 * 60)
                 if expire_time >= curr_time:
-                    log.debug("在一分钟之内的异常发生，执行计数+1,并更新异常时间")
+                    log.debug("在一分钟之内的异常发生")
                     if TOTAL[host][site]['count'] > 7:
+                        log.debug("一分钟之内累计达到7次，删除该KEY记录，执行Action动作设置为True")
                         del TOTAL[host][site]
                         return True
                     else:
+                        log.debug("一分钟之内未达到7次，执行计数+1")
                         TOTAL[host][site]['count'] += 1
                         TOTAL[host][site]['err_time'] = curr_time
                 else:
@@ -50,7 +52,6 @@ class _AsyncCheckThread(Thread):
             else:
                 log.debug("主机记录已存在，并发现该主机有其他站点异常，开始记录")
                 TOTAL[host][site] = dict(count=1, err_time=curr_time)
-            return False
         else:
             log.debug("第一次发生异常，count初始化为1，并记录异常时间为当前时间")
             record = {
@@ -60,10 +61,10 @@ class _AsyncCheckThread(Thread):
                 }
             }
             TOTAL[host] = record
-            return False
+        return False
 
-    async def _check_condition(self, site: str, host: str) -> bool:
-        """条件检查，检查当前计数是否在一分钟之内达到7次"""
+    async def _check_action(self, site: str, host: str) -> bool:
+        """action检查，检查该采取何种动作。回收还是摘除"""
         pass
 
     async def _get_status(self, site: str, host: str) -> int:
