@@ -1,0 +1,20 @@
+sites:
+  test.aaa.com:
+    servers:
+    - 127.0.0.1:8080
+    gateway_type: nginx
+
+  #test.bbb.com:
+    #servers:
+    # - 128.0.255.27:80
+    #gateway_type: nginx
+
+nginxs:
+  - 128.0.255.10
+  - 128.0.100.170
+
+auto: True
+
+notify_users:
+  - user1
+  - user2
