@@ -13,8 +13,6 @@ nginxs:
   - 128.0.255.10
   - 128.0.100.170
 
-auto: True
-
 notify_users:
   - user1
   - user2
