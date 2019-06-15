@@ -1,12 +1,16 @@
 from threading import Thread
 from subprocess import run, PIPE, STDOUT
 
+from utils import Log
+
+log = Log(__name__).get_loger()
+
 
 class _BaseActionThread(Thread):
     def __init__(self, site: str, host: str):
         Thread.__init__(self)
         self.site = site
-        self.host = host
+        self.host = host.split(':')[0]
 
     @staticmethod
     def execute_action(playbook: str) -> str:
@@ -80,6 +84,7 @@ class NgxActionThread(_BaseActionThread):
         Thread.__init__(self)
         self.site = site
         self.host = host
+        # action is down or up
         self.action = action
 
     def start(self) -> None:
@@ -88,8 +93,9 @@ class NgxActionThread(_BaseActionThread):
         else:
             _TASK_YAML = self._UP_YAML_TMP
         ansible_playbook = self._create_task_yaml(_TASK_YAML, self.host, self.site)
+        log.info("将对站点{}执行{}".format(self.site, self.action))
         stdout = self.execute_action(ansible_playbook)
-        print(stdout)
+        log.info(stdout)
 
 
 if __name__ == '__main__':
