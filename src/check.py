@@ -2,13 +2,19 @@ import time
 import asyncio
 from threading import Thread
 
+import yaml
 import aiohttp
 
 from utils import Log
+from action import RecycleActionThread, NgxActionThread
 
 log = Log(__name__).get_loger()
+log.level = 20
 TOTAL = dict()
-# ACTION = dict()
+ACTIONED = dict()
+with open('config.yml') as f:
+    conf = yaml.safe_load(f)
+    nginxs = conf.get('nginxs')
 
 
 class _AsyncCheckThread(Thread):
@@ -63,9 +69,33 @@ class _AsyncCheckThread(Thread):
             TOTAL[host] = record
         return False
 
-    async def _check_action(self, site: str, host: str) -> bool:
+    @staticmethod
+    async def _action(site: str, host: str) -> None:
         """action检查，检查该采取何种动作。回收还是摘除"""
-        pass
+        curr_time = time.time()
+        expiry_time = time.time() + (3 * 60)
+        if site in ACTIONED.get(host, {}):
+            log.debug("执行记录中有记录，说明之前执行过回收动作，检查回收的时间是否在三分钟之内")
+            action_time = ACTIONED[host][site]['action_time']
+            if action_time > curr_time:
+                log.debug("三分钟这内执行过action操作，执行二次介入，执行摘除操作")
+                for ngx in nginxs:
+                    action_thread = NgxActionThread(site, ngx, 'down')
+                    action_thread.start()
+                log.debug('摘除执行完成，更新执行动作的类型与动作时间，修改为down')
+                ACTIONED[host][site]['action_type'] = 'down'
+                ACTIONED[host][site]['action_time'] = expiry_time
+        else:
+            log.info("执行记录未发现{}的{}动作,执行第一次介入回收操作".format(host, site))
+            recycle_t = RecycleActionThread(site, host)
+            recycle_t.start()
+            log.info("开始记录执行回收操作，再次出现时，将执行摘除操作")
+            if host not in ACTIONED:
+                ACTIONED[host] = dict()
+            ACTIONED[host][site] = {
+                'action_time': expiry_time,
+                'action_type': 'recycle'
+            }
 
     async def _get_status(self, site: str, host: str) -> int:
         url = self._format_url(host)
@@ -84,10 +114,23 @@ class _AsyncCheckThread(Thread):
         if status >= 500:
             is_action = await self._calculate_error(site, host)
             if is_action:
-                log.debug("一分钟之内已达到7次,开始执行Action流程判断")
+                log.debug("一分钟之内已达到7次,开始执行Action流程判断。回收或者摘除动作")
+                await self._action(site, host)
+        else:
+            if site in TOTAL[host]:
+                log.info("删除之前的错误记录")
+                del TOTAL[host][site]
+            if ACTIONED.get(host, {}).get(site, {}).get('action_type') == 'down':
+                log.info("之前有摘除操作，现在已恢复，将执行上线操作")
+                for ngx in nginxs:
+                    up_thread = NgxActionThread(site, ngx, 'up')
+                    up_thread.start()
+                log.info("执行上线完成，删除该KEY键")
+                del ACTIONED[host][site]
 
     def start(self) -> None:
         global TOTAL
+        global ACTIONED
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         tasks = [
@@ -120,4 +163,4 @@ if __name__ == '__main__':
     for i in range(7):
         t = _AsyncCheckThread({})
         t.start()
-    print(time.time() - start)
+    log.info(time.time() - start)
