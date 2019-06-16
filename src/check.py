@@ -14,7 +14,7 @@ TOTAL = dict()
 ACTIONED = dict()
 with open('config.yml') as f:
     conf = yaml.safe_load(f)
-    nginxs = conf.get('nginxs')
+nginxs = conf.get('nginxs')
 
 
 class _AsyncCheckThread(Thread):
@@ -78,12 +78,18 @@ class _AsyncCheckThread(Thread):
             log.debug("执行记录中有记录，说明之前执行过回收动作，检查回收的时间是否在三分钟之内")
             action_time = ACTIONED[host][site]['action_time']
             if action_time > curr_time:
-                log.debug("三分钟这内执行过action操作，执行二次介入，执行摘除操作")
+                log.info("三分钟这内执行过action操作，执行二次介入，执行摘除操作")
                 for ngx in nginxs:
                     action_thread = NgxActionThread(site, ngx, 'down')
                     action_thread.start()
-                log.debug('摘除执行完成，更新执行动作的类型与动作时间，修改为down')
+                log.info('摘除执行完成，更新执行动作的类型与动作时间，修改为down')
                 ACTIONED[host][site]['action_type'] = 'down'
+                ACTIONED[host][site]['action_time'] = expiry_time
+            else:
+                log.info("三分钟之前执行过action操作，此次一次介入，执行回收操作")
+                r_thread = RecycleActionThread(site, host)
+                r_thread.start()
+                ACTIONED[host][site]['action_type'] = 'recycle'
                 ACTIONED[host][site]['action_time'] = expiry_time
         else:
             log.info("执行记录未发现{}的{}动作,执行第一次介入回收操作".format(host, site))
@@ -117,7 +123,7 @@ class _AsyncCheckThread(Thread):
                 log.debug("一分钟之内已达到7次,开始执行Action流程判断。回收或者摘除动作")
                 await self._action(site, host)
         else:
-            if site in TOTAL[host]:
+            if site in TOTAL.get(host, []):
                 log.info("删除之前的错误记录")
                 del TOTAL[host][site]
             if ACTIONED.get(host, {}).get(site, {}).get('action_type') == 'down':
