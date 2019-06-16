@@ -21,7 +21,8 @@ class _BaseActionThread(Thread):
         except UnicodeDecodeError:
             return stdout.decode("gbk")
 
-    def _create_task_yaml(self, yaml_tmp: str, host: str, site: str) -> str:
+    @staticmethod
+    def _create_task_yaml(yaml_tmp: str, host: str, site: str) -> str:
         task_str = yaml_tmp.format(host=host, site=site)
         yaml_name = "{}_{}.yml".format(host, site)
         with open(yaml_name, "w") as f:
@@ -44,7 +45,7 @@ class RecycleActionThread(_BaseActionThread):
     def start(self) -> None:
         ansible_playbook = self._create_task_yaml(self._RECYCLE_YAML_TMP, self.host, self.site)
         stdout = self.execute_action(ansible_playbook)
-        print(stdout)
+        log.debug(stdout)
 
 
 class NgxActionThread(_BaseActionThread):
