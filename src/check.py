@@ -108,7 +108,7 @@ class _AsyncCheckThread(Thread):
         headers = dict(Host=site)
         try:
             async with aiohttp.ClientSession(headers=headers) as session:
-                async with session.get(url, timeout=15) as resp:
+                async with session.get(url, timeout=5) as resp:
                     return resp.status
         except Exception as e:
             log.warning(e)
