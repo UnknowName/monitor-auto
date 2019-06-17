@@ -4,6 +4,7 @@ import pickle
 import logging
 import logging.handlers
 
+import yaml
 import aiohttp
 
 
@@ -30,7 +31,7 @@ class Log(object):
         return self.logger
 
 
-class AsyncWechat(object):
+class _AsyncWechat(object):
     token_fmt = 'https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid={corp_id}&corpsecret={secret}'
     send_fmt = 'https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token={token}'
 
@@ -89,9 +90,52 @@ class AsyncWechat(object):
             return ""
 
 
+class _EmailNotify(object):
+    def __init__(self, server: str, username: str, password: str):
+        self.server = server
+        self.username = username
+        self.password = password
+
+    @staticmethod
+    async def send_msg(users: list, msg: str):
+        print("send msg {0} to user {1}".format(msg, users))
+
+
+class AsyncNotify(object):
+    def __init__(self, configfile: str):
+        with open(configfile) as f:
+            _conf = yaml.safe_load(f)
+        self.conf = _conf
+
+    async def send_msgs(self, msg: str):
+        for name, v in self.conf.get("notify").items():
+            users = v.get('users')
+            if name == 'wechat':
+                corpid = v.get('corpid')
+                secret = v.get('secret')
+                wx = _AsyncWechat(corpid, secret)
+                coro = wx.send_msg(users, msg)
+            elif name == 'email':
+                server = v.get('server')
+                username = v.get('username')
+                password = v.get('password')
+                em = _EmailNotify(server, username, password)
+                coro = em.send_msg(users, msg)
+            else:
+                logging.warning("发现配置文件有不支持的通知方式{}".format(name))
+                continue
+            await coro
+
+
 if __name__ == "__main__":
+    """"
     import asyncio
     loop = asyncio.get_event_loop()
-    wx = AsyncWechat("corpid", "secret")
+    wx = _AsyncWechat("corpid", "secret")
     loop.run_until_complete(wx.send_msg(['tkggvfhpce2'], 'hello,world'))
     loop.close()
+    """
+    import asyncio
+    loop = asyncio.get_event_loop()
+    n = AsyncNotify('config.yml')
+    loop.run_until_complete(n.send_msgs("testinfo"))
