@@ -6,7 +6,7 @@ RUN adduser -D -u 120002 -h /opt/app app \
     && sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories \
     && apk add gcc g++ make libffi-dev openssl-dev tzdata \
     && cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
-    && pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ -r reuqirements.txt\
+    && pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ -r requirements.txt\
     && pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ pywinrm ansible \
     && apk del gcc g++ make libffi-dev openssl-dev tzdata \
     && rm -rf /var/cache/apk/*
