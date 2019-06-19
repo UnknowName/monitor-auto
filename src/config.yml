@@ -13,6 +13,18 @@ nginxs:
   - 128.0.255.10
   - 128.0.100.170
 
-notify_users:
-  - user1
-  - user2
+notify:
+  wechat:
+    corpid: wechat-corpid
+    secret: wechat-secret
+    users:
+      - tkggvfhpce2
+      - user2
+
+  email:
+    server: smtp.domain.com
+    username: username
+    password: password
+    users:
+      - username@domain.com
+      - user2@domain.com

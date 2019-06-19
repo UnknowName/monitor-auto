@@ -44,8 +44,7 @@ class RecycleActionThread(_BaseActionThread):
 
     def start(self) -> None:
         ansible_playbook = self._create_task_yaml(self._RECYCLE_YAML_TMP, self.host, self.site)
-        stdout = self.execute_action(ansible_playbook)
-        log.debug(stdout)
+        self.execute_action(ansible_playbook)
 
 
 class NgxActionThread(_BaseActionThread):
@@ -95,8 +94,7 @@ class NgxActionThread(_BaseActionThread):
             _TASK_YAML = self._UP_YAML_TMP
         ansible_playbook = self._create_task_yaml(_TASK_YAML, self.host, self.site)
         log.info("将对站点{}执行{}".format(self.site, self.action))
-        stdout = self.execute_action(ansible_playbook)
-        log.info(stdout)
+        self.execute_action(ansible_playbook)
 
 
 if __name__ == '__main__':

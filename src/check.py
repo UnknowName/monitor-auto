@@ -5,16 +5,18 @@ from threading import Thread
 import yaml
 import aiohttp
 
-from utils import Log
+from utils import Log, AsyncNotify
 from action import RecycleActionThread, NgxActionThread
 
 log = Log(__name__).get_loger()
 log.level = 20
+config_file = 'config.yml'
 TOTAL = dict()
 ACTIONED = dict()
-with open('config.yml') as f:
+with open(config_file) as f:
     conf = yaml.safe_load(f)
 nginxs = conf.get('nginxs')
+notify = AsyncNotify(config_file)
 
 
 class _AsyncCheckThread(Thread):
@@ -83,16 +85,19 @@ class _AsyncCheckThread(Thread):
                     action_thread = NgxActionThread(site, ngx, 'down')
                     action_thread.start()
                 log.info('摘除执行完成，更新执行动作的类型与动作时间，修改为down')
+                await notify.send_msgs("主机: {0}\n站点: {1}\n动作: 摘除".format(host, site))
                 ACTIONED[host][site]['action_type'] = 'down'
                 ACTIONED[host][site]['action_time'] = expiry_time
             else:
                 log.info("三分钟之前执行过action操作，此次一次介入，执行回收操作")
+                await notify.send_msgs("主机: {0}\n站点: {1}\n动作: 回收".format(host, site))
                 r_thread = RecycleActionThread(site, host)
                 r_thread.start()
                 ACTIONED[host][site]['action_type'] = 'recycle'
                 ACTIONED[host][site]['action_time'] = expiry_time
         else:
             log.info("执行记录未发现{}的{}动作,执行第一次介入回收操作".format(host, site))
+            await notify.send_msgs("主机: {0}\n站点: {1}\n动作: 回收".format(host, site))
             recycle_t = RecycleActionThread(site, host)
             recycle_t.start()
             log.info("开始记录执行回收操作，再次出现时，将执行摘除操作")
@@ -127,6 +132,7 @@ class _AsyncCheckThread(Thread):
                 log.info("删除之前的错误记录")
                 del TOTAL[host][site]
             if ACTIONED.get(host, {}).get(site, {}).get('action_type') == 'down':
+                await notify.send_msgs("主机: {0}\n站点: {1}\n操作: 恢复上线".format(host, site))
                 log.info("之前有摘除操作，现在已恢复，将执行上线操作")
                 for ngx in nginxs:
                     up_thread = NgxActionThread(site, ngx, 'up')
@@ -158,7 +164,6 @@ class MainThread(Thread):
     def start(self) -> None:
         for site, v in self.data.items():
             servers = v.get('servers')
-            # print(site, servers)
             check_t = _AsyncCheckThread(site, servers)
             check_t.start()
             log.info("当前错误: {}".format(TOTAL))
