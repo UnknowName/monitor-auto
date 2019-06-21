@@ -90,6 +90,23 @@ class _AsyncWechat(object):
             return ""
 
 
+class _AsyncDDing(object):
+    _send_fmt = "https://oapi.dingtalk.com/robot/send?access_token={token}"
+
+    def __init__(self, token: str) -> None:
+        self.send_api = self._send_fmt.format(token=token)
+
+    async def send_msg(self, msg: str) -> str:
+        msgs = {
+            'msgtype': 'text',
+            'text': {
+                'content': msg
+            }
+        }
+        async with aiohttp.request('POST', self.send_api, json=msgs) as resp:
+            return await resp.json()
+
+
 class _EmailNotify(object):
     def __init__(self, server: str, username: str, password: str):
         self.server = server
@@ -121,6 +138,10 @@ class AsyncNotify(object):
                 password = v.get('password')
                 em = _EmailNotify(server, username, password)
                 coro = em.send_msg(users, msg)
+            elif name == 'dingding':
+                token = v.get('robot_token')
+                dding = _AsyncDDing(token)
+                coro = dding.send_msg(msg)
             else:
                 logging.warning("发现配置文件有不支持的通知方式{}".format(name))
                 continue
@@ -128,14 +149,14 @@ class AsyncNotify(object):
 
 
 if __name__ == "__main__":
-    """"
     import asyncio
     loop = asyncio.get_event_loop()
-    wx = _AsyncWechat("corpid", "secret")
-    loop.run_until_complete(wx.send_msg(['tkggvfhpce2'], 'hello,world'))
+    dd = _DDing("dingding_robot_toekn")
+    loop.run_until_complete(dd.send_msg('hello,world'))
     loop.close()
     """
     import asyncio
     loop = asyncio.get_event_loop()
     n = AsyncNotify('config.yml')
     loop.run_until_complete(n.send_msgs("testinfo"))
+    """

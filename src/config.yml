@@ -28,3 +28,6 @@ notify:
     users:
       - username@domain.com
       - user2@domain.com
+
+  dingding:
+    robot_token: token
