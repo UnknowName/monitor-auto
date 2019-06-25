@@ -151,7 +151,7 @@ class AsyncNotify(object):
 if __name__ == "__main__":
     import asyncio
     loop = asyncio.get_event_loop()
-    dd = _DDing("dingding_robot_toekn")
+    dd = _AsyncDDing("dingding_robot_toekn")
     loop.run_until_complete(dd.send_msg('hello,world'))
     loop.close()
     """
