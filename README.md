@@ -70,9 +70,11 @@ docker build -t monitor .
 ```yaml
 monitor:
     image: monitor
+    container_name: monitor
     net: host
     restart: always
     volumes:
       - ./ansible_hosts:/etc/ansible/hosts
       - ./hosts:/etc/hosts
+      - ./config.yml:/opt/app/config.yml
 ```
