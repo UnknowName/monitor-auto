@@ -80,26 +80,30 @@ class _AsyncCheckThread(Thread):
             log.debug("执行记录中有记录，说明之前执行过回收动作，检查回收的时间是否在三分钟之内")
             action_time = ACTIONED[host][site]['action_time']
             if action_time > curr_time:
-                log.info("三分钟这内执行过action操作，执行二次介入，执行摘除操作")
-                for ngx in nginxs:
-                    action_thread = NgxActionThread(site, ngx, 'down')
-                    action_thread.start()
-                log.info('摘除执行完成，更新执行动作的类型与动作时间，修改为down')
-                await notify.send_msgs("主机: {0}\n站点: {1}\n动作: 摘除".format(host, site))
-                ACTIONED[host][site]['action_type'] = 'down'
-                ACTIONED[host][site]['action_time'] = expiry_time
+                log.info("三分钟这内执行过action操作,继续判断action的类型")
+                if ACTIONED[host][site]['action_type'] == 'recycle':
+                    for ngx in nginxs:
+                        action_thread = NgxActionThread(site, ngx, 'down')
+                        action_thread.start()
+                    log.info('摘除执行完成，更新执行动作的类型与动作时间，修改为down')
+                    ACTIONED[host][site]['action_type'] = 'down'
+                    ACTIONED[host][site]['action_time'] = expiry_time
+                    await notify.send_msgs("主机: {0}\n站点: {1}\n动作: 摘除".format(host, site))
+                else:
+                    log.info("三分钟内执行过摘取动作，此次忽略")
+                    pass
             else:
                 log.info("三分钟之前执行过action操作，此次一次介入，执行回收操作")
-                await notify.send_msgs("主机: {0}\n站点: {1}\n动作: 回收".format(host, site))
                 r_thread = RecycleActionThread(site, host)
                 r_thread.start()
                 ACTIONED[host][site]['action_type'] = 'recycle'
                 ACTIONED[host][site]['action_time'] = expiry_time
+                await notify.send_msgs("主机: {0}\n站点: {1}\n动作: 回收".format(host, site))
         else:
             log.info("执行记录未发现{}的{}动作,执行第一次介入回收操作".format(host, site))
-            await notify.send_msgs("主机: {0}\n站点: {1}\n动作: 回收".format(host, site))
             recycle_t = RecycleActionThread(site, host)
             recycle_t.start()
+            await notify.send_msgs("主机: {0}\n站点: {1}\n动作: 回收".format(host, site))
             log.info("开始记录执行回收操作，再次出现时，将执行摘除操作")
             if host not in ACTIONED:
                 ACTIONED[host] = dict()
@@ -167,11 +171,3 @@ class MainThread(Thread):
             check_t = _AsyncCheckThread(site, servers)
             check_t.start()
             log.info("当前错误: {}".format(TOTAL))
-
-
-if __name__ == '__main__':
-    start = time.time()
-    for i in range(7):
-        t = _AsyncCheckThread({})
-        t.start()
-    log.info(time.time() - start)
