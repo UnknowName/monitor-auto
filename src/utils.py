@@ -3,9 +3,12 @@ import time
 import pickle
 import logging
 import logging.handlers
+from email.mime.text import MIMEText
 
 import yaml
 import aiohttp
+import aiosmtplib
+import aiosmtplib.auth
 
 
 class Log(object):
@@ -107,15 +110,22 @@ class _AsyncDDing(object):
             return await resp.json()
 
 
-class _EmailNotify(object):
-    def __init__(self, server: str, username: str, password: str):
+class _AsyncEmail(object):
+    def __init__(self, server: str, port: int, username: str, password: str):
         self.server = server
+        self.port = port if port else 25
         self.username = username
         self.password = password
+        self._smtp = aiosmtplib.SMTP(hostname=server, port=port)
 
-    @staticmethod
-    async def send_msg(users: list, msg: str):
-        print("send msg {0} to user {1}".format(msg, users))
+    async def send_msg(self, users: list, msg: str):
+        message = MIMEText(msg)
+        message['From'] = self.username
+        message['To'] = ';'.join(users)
+        message["Subject"] = msg
+        async with self._smtp as smtp:
+            await smtp.login(self.username, self.password)
+            await smtp.send_message(message)
 
 
 class AsyncNotify(object):
@@ -136,7 +146,8 @@ class AsyncNotify(object):
                 server = v.get('server')
                 username = v.get('username')
                 password = v.get('password')
-                em = _EmailNotify(server, username, password)
+                port = v.get('port')
+                em = _AsyncEmail(server, port, username, password)
                 coro = em.send_msg(users, msg)
             elif name == 'dingding':
                 token = v.get('robot_token')
@@ -151,12 +162,10 @@ class AsyncNotify(object):
 if __name__ == "__main__":
     import asyncio
     loop = asyncio.get_event_loop()
-    dd = _AsyncDDing("dingding_robot_toekn")
-    loop.run_until_complete(dd.send_msg('hello,world'))
-    loop.close()
-    """
-    import asyncio
-    loop = asyncio.get_event_loop()
     n = AsyncNotify('config.yml')
     loop.run_until_complete(n.send_msgs("testinfo"))
+    """
+    em = _AsyncEmail(server="smtp.sina.com", port=25, username="username@sina.com", password="password")
+    loop.run_until_complete(em.send_msg(['user1@qq.com', 'username@sina.com'], "test"))
+    loop.close()
     """
