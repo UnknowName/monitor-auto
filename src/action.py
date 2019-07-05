@@ -22,8 +22,12 @@ class _BaseActionThread(Thread):
             return stdout.decode("gbk")
 
     @staticmethod
-    def _create_task_yaml(yaml_tmp: str, host: str, site: str) -> str:
-        task_str = yaml_tmp.format(host=host, site=site)
+    def _create_task_yaml(yaml_tmp: str, host: str, site: str, **kwargs) -> str:
+        if 'ngx' in kwargs:
+            ngx = kwargs.get("ngx")
+            task_str = yaml_tmp.format(host=host, site=site, ngx=ngx)
+        else:
+            task_str = yaml_tmp.format(host=host, site=site)
         yaml_name = "{}_{}.yml".format(host, site)
         with open(yaml_name, "w") as f:
             f.write(task_str)
@@ -50,7 +54,7 @@ class RecycleActionThread(_BaseActionThread):
 class NgxActionThread(_BaseActionThread):
     _DOWN_YAML_TMP = r"""
     - hosts:
-      - {host}
+      - {ngx}
       gather_facts: False
       tasks:
       - name: {site} down {host}
@@ -66,7 +70,7 @@ class NgxActionThread(_BaseActionThread):
 
     _UP_YAML_TMP = r"""
     - hosts:
-      - {host}
+      - {ngx}
       gather_facts: False
       tasks:
       - name: {site}  Up {host}
@@ -80,8 +84,9 @@ class NgxActionThread(_BaseActionThread):
         shell: systemctl reload nginx || nginx -s reload
     """
 
-    def __init__(self, site: str, host: str, action: str):
+    def __init__(self, ngx: str, site: str, host: str, action: str):
         Thread.__init__(self)
+        self.ngx = ngx
         self.site = site
         self.host = host
         # action is down or up
@@ -92,11 +97,11 @@ class NgxActionThread(_BaseActionThread):
             _TASK_YAML = self._DOWN_YAML_TMP
         else:
             _TASK_YAML = self._UP_YAML_TMP
-        ansible_playbook = self._create_task_yaml(_TASK_YAML, self.host, self.site)
+        ansible_playbook = self._create_task_yaml(_TASK_YAML, self.host, self.site, ngx=self.ngx)
         log.info("将对站点{}执行{}".format(self.site, self.action))
         self.execute_action(ansible_playbook)
 
 
 if __name__ == '__main__':
-    t = NgxActionThread("www.aaa.com", "128.0.100.170", 'down')
+    t = NgxActionThread("128.0.100.170", "www.aaa.com", "128.0.255.27", 'down')
     t.start()
