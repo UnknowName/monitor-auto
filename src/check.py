@@ -83,7 +83,7 @@ class _AsyncCheckThread(Thread):
                 log.info("三分钟这内执行过action操作,继续判断action的类型")
                 if ACTIONED[host][site]['action_type'] == 'recycle':
                     for ngx in nginxs:
-                        action_thread = NgxActionThread(site, ngx, 'down')
+                        action_thread = NgxActionThread(ngx, site, host, 'down')
                         action_thread.start()
                     log.info('摘除执行完成，更新执行动作的类型与动作时间，修改为down')
                     ACTIONED[host][site]['action_type'] = 'down'
@@ -139,7 +139,7 @@ class _AsyncCheckThread(Thread):
                 await notify.send_msgs("主机: {0}\n站点: {1}\n操作: 恢复上线".format(host, site))
                 log.info("之前有摘除操作，现在已恢复，将执行上线操作")
                 for ngx in nginxs:
-                    up_thread = NgxActionThread(site, ngx, 'up')
+                    up_thread = NgxActionThread(ngx, site, host, 'up')
                     up_thread.start()
                 log.info("执行上线完成，删除该KEY键")
                 del ACTIONED[host][site]

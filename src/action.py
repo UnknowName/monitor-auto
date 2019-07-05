@@ -28,7 +28,7 @@ class _BaseActionThread(Thread):
             task_str = yaml_tmp.format(host=host, site=site, ngx=ngx)
         else:
             task_str = yaml_tmp.format(host=host, site=site)
-        yaml_name = "{}_{}.yml".format(host, site)
+        yaml_name = "{}_{}.yml".format('_'.join(host.split(":")), site)
         with open(yaml_name, "w") as f:
             f.write(task_str)
             return yaml_name
@@ -103,5 +103,7 @@ class NgxActionThread(_BaseActionThread):
 
 
 if __name__ == '__main__':
-    t = NgxActionThread("128.0.100.170", "www.aaa.com", "128.0.255.27", 'down')
+    r = RecycleActionThread("www.aa.com", "128.0.255.28:80")
+    r.start()
+    t = NgxActionThread("128.0.100.170", "www.aa.com", "128.0.255.28:80", 'down')
     t.start()
