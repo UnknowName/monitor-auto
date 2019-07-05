@@ -75,6 +75,27 @@ monitor:
     restart: always
     volumes:
       - ./ansible_hosts:/etc/ansible/hosts
-      - ./hosts:/etc/hosts
       - ./config.yml:/opt/app/config.yml
+```
+
+## Example Files
+
+### ansible_hosts
+
+```ini
+[linux]
+# 该主机名称要同config.yml中的servers值一致
+128.0.100.170 ansible_user=username ansilbe_password=password
+128.0.255.10  ansible_user=username ansilbe_password=password
+
+[windows]
+192.168.1.10 ansible_password=password
+
+[windows:vars]
+ansible_user=administrator
+ansible_connection=winrm
+ansible_winrm_transport=basic
+ansible_port=5986
+ansible_winrm_scheme=https
+ansible_winrm_server_cert_validation=ignore
 ```
