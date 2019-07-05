@@ -1,12 +1,12 @@
 sites:
   test.aaa.com:
     servers:
-    - 127.0.0.1:8080
+    - 192.168.1.10:8080
     gateway_type: nginx
 
   test.bbb.com:
     servers:
-      - 127.0.0.1:8080
+      - 192.168.1.10:8080
     gateway_type: nginx
 
 nginxs:

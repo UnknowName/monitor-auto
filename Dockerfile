@@ -3,8 +3,10 @@ ENV APP_HOME=/opt/app PATH=${APP_HOME}/bin:$PATH
 ADD ./src /opt/app
 WORKDIR /opt/app
 RUN adduser -D -u 120002 -h /opt/app app \
+    && mkdir .ssh \
+    && echo "StrictHostKeyChecking=no" > .ssh/config \
     && sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories \
-    && apk add gcc g++ make libffi-dev openssl-dev tzdata \
+    && apk add gcc g++ make libffi-dev openssl-dev tzdata openssh-client sshpass\
     && cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
     && pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ -r requirements.txt\
     && pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ pywinrm ansible \
