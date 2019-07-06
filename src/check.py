@@ -16,6 +16,7 @@ ACTIONED = dict()
 with open(config_file) as f:
     conf = yaml.safe_load(f)
 nginxs = conf.get('nginxs')
+print(nginxs)
 notify = AsyncNotify(config_file)
 
 
@@ -103,7 +104,6 @@ class _AsyncCheckThread(Thread):
             log.info("执行记录未发现{}的{}动作,执行第一次介入回收操作".format(host, site))
             recycle_t = RecycleActionThread(site, host)
             recycle_t.start()
-            await notify.send_msgs("主机: {0}\n站点: {1}\n动作: 回收".format(host, site))
             log.info("开始记录执行回收操作，再次出现时，将执行摘除操作")
             if host not in ACTIONED:
                 ACTIONED[host] = dict()
@@ -111,6 +111,7 @@ class _AsyncCheckThread(Thread):
                 'action_time': expiry_time,
                 'action_type': 'recycle'
             }
+            await notify.send_msgs("主机: {0}\n站点: {1}\n动作: 回收".format(host, site))
 
     async def _get_status(self, site: str, host: str) -> int:
         url = self._format_url(host)

@@ -13,22 +13,25 @@ class _BaseActionThread(Thread):
         self.host = host.split(':')[0]
 
     @staticmethod
-    def execute_action(playbook: str) -> str:
+    def execute_action(playbook: str) -> None:
         cmd = "ansible-playbook {}".format(playbook)
         stdout = run(cmd, shell=True, stdout=PIPE, stderr=STDOUT).stdout
         try:
-            return stdout.decode("utf8")
+            std = stdout.decode("utf8")
         except UnicodeDecodeError:
-            return stdout.decode("gbk")
+            std = stdout.decode("gbk")
+        log.info("Ansible执行日志*******\n{}".format(std))
 
     @staticmethod
     def _create_task_yaml(yaml_tmp: str, host: str, site: str, **kwargs) -> str:
+        host_port = '_'.join(host.split(":"))
         if 'ngx' in kwargs:
             ngx = kwargs.get("ngx")
             task_str = yaml_tmp.format(host=host, site=site, ngx=ngx)
+            yaml_name = "{}_{}_{}.yml".format(ngx, host_port, site)
         else:
             task_str = yaml_tmp.format(host=host, site=site)
-        yaml_name = "{}_{}.yml".format('_'.join(host.split(":")), site)
+            yaml_name = "{}_{}.yml".format(host_port, site)
         with open(yaml_name, "w") as f:
             f.write(task_str)
             return yaml_name
@@ -98,12 +101,12 @@ class NgxActionThread(_BaseActionThread):
         else:
             _TASK_YAML = self._UP_YAML_TMP
         ansible_playbook = self._create_task_yaml(_TASK_YAML, self.host, self.site, ngx=self.ngx)
-        log.info("将对站点{}执行{}".format(self.site, self.action))
+        log.info("将对站点{}的主机{}执行{}".format(self.site, self.host, self.action))
         self.execute_action(ansible_playbook)
 
 
 if __name__ == '__main__':
-    r = RecycleActionThread("www.aa.com", "128.0.255.28:80")
-    r.start()
+    # r = RecycleActionThread("www.aa.com", "128.0.255.28:80")
+    # r.start()
     t = NgxActionThread("128.0.100.170", "www.aa.com", "128.0.255.28:80", 'down')
     t.start()
