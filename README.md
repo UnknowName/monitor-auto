@@ -21,12 +21,12 @@ sites:
   test.aaa.com:
     # 定义了那些主机运行了该服务，最终的HTTP探测目标
     servers:
-    - 127.0.0.1:8080
+    - 192.168.1.10:8080
     gateway_type: nginx
 
   test.bbb.com:
     servers:
-      - 127.0.0.1:8080
+      - 192.168.1.10:8081
     gateway_type: nginx
 
 # 网关服务器，当前仅支持NGINX
@@ -55,7 +55,7 @@ notify:
 
   # 钉钉
   dingding:
-    # 钉钉机器人的URL，可以在讨论组中设置和查看
+    # 钉钉讨论组中的机器人的TOKEN。可以通过创建讨论组后，添加机器人
     robot_token: token
 ```
 
