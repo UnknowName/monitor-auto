@@ -1,12 +1,14 @@
 sites:
   test.aaa.com:
+    timeout: 20
     servers:
-    - 192.168.1.10:8080
+    - 128.0.255.6:23456
     gateway_type: nginx
 
   test.bbb.com:
+    timeout: 20
     servers:
-      - 192.168.1.10:8080
+      - 128.0.255.254:80
     gateway_type: nginx
 
 nginxs:

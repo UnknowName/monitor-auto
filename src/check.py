@@ -16,15 +16,15 @@ ACTIONED = dict()
 with open(config_file) as f:
     conf = yaml.safe_load(f)
 nginxs = conf.get('nginxs')
-print(nginxs)
 notify = AsyncNotify(config_file)
 
 
 class _AsyncCheckThread(Thread):
     """检查线程，后续还需要在主线程里面启动该线程"""
-    def __init__(self, site: str, servers: list) -> None:
+    def __init__(self, site: str, servers: list, timeout: int = 20) -> None:
         Thread.__init__(self)
 
+        self.timeout = timeout
         self.site = site
         self.servers = servers if servers else []
 
@@ -118,7 +118,7 @@ class _AsyncCheckThread(Thread):
         headers = dict(Host=site)
         try:
             async with aiohttp.ClientSession(headers=headers) as session:
-                async with session.get(url, timeout=5) as resp:
+                async with session.get(url, timeout=self.timeout) as resp:
                     return resp.status
         except Exception as e:
             log.warning(e)
@@ -169,6 +169,8 @@ class MainThread(Thread):
     def start(self) -> None:
         for site, v in self.data.items():
             servers = v.get('servers')
-            check_t = _AsyncCheckThread(site, servers)
+            timeout = v.get('timeout')
+            check_t = _AsyncCheckThread(site, servers, timeout)
             check_t.start()
-            log.info("当前错误: {}".format(TOTAL))
+            if TOTAL:
+                log.info("当前错误: {}".format(TOTAL))
