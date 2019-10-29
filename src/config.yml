@@ -2,13 +2,13 @@ sites:
   test.aaa.com:
     timeout: 20
     servers:
-    - 128.0.255.6:23456
+    - 128.0.255.27:80
     gateway_type: nginx
 
   test.bbb.com:
     timeout: 20
     servers:
-      - 128.0.255.254:80
+      - 128.0.255.27:82
     gateway_type: nginx
 
 nginxs:
@@ -16,20 +16,20 @@ nginxs:
   - 128.0.100.170
 
 notify:
-  wechat:
-    corpid: wechat-corpid
-    secret: wechat-secret
-    users:
-      - tkggvfhpce2
-      - user2
+#  wechat:
+#    corpid: wechat-corpid
+#    secret: wechat-secret
+#    users:
+#      - tkggvfhpce2
+#      - user2
 
-  email:
-    server: smtp.domain.com
-    username: username
-    password: password
-    users:
-      - username@domain.com
-      - user2@domain.com
+#  email:
+#    server: smtp.domain.com
+#    username: username
+#    password: password
+#    users:
+#      - username@domain.com
+#      - user2@domain.com
 
   dingding:
-    robot_token: token
+    robot_token: 50f790567236515eb2a228a102808a7d4fd365c78a37f45a8d2f6b3b5a4bd156
