@@ -157,7 +157,7 @@ class _AsyncCheckThread(Thread):
             if site in TOTAL.get(host, []):
                 log.info("删除之前的错误记录")
                 del TOTAL[host][site]
-            if ACTIONED.get(host, {}).get(site, {}).get('action_type') == 'down':
+            if ACTIONED.get(host, {}).get(site, {}).get('action_type'):
                 await notify.send_msgs("主机: {0}\n站点: {1}\n操作: 恢复上线".format(host, site))
                 log.info("之前有摘除操作，现在已恢复，将执行上线操作")
                 for ngx in nginxs:
