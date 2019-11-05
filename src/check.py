@@ -18,6 +18,7 @@ with open(config_file) as f:
     conf = yaml.safe_load(f)
 nginxs = conf.get('nginxs')
 notify = AsyncNotify(config_file)
+current_time = lambda: time.strftime("%Y-%m-%d %H:%M:%S")
 
 
 class _AsyncCheckThread(Thread):
@@ -88,7 +89,7 @@ class _AsyncCheckThread(Thread):
                     recycle_t.start()
                     ACTIONED[host][site]['action_type'] = 'recycle'
                     ACTIONED[host][site]['action_time'] = expiry_time
-                    await notify.send_msgs("主机: {0}\n站点: {1}\n动作: 回收".format(host, site))
+                    await notify.send_msgs("Time: {0}\n主机: {1}\n站点: {2}\n动作: 回收".format(current_time(), host, site))
                 else:
                     log.info("三分钟内执行过摘取动作，此次忽略")
                     pass
@@ -98,7 +99,7 @@ class _AsyncCheckThread(Thread):
                 r_thread.start()
                 ACTIONED[host][site]['action_type'] = 'recycle'
                 ACTIONED[host][site]['action_time'] = expiry_time
-                await notify.send_msgs("主机: {0}\n站点: {1}\n动作: 回收".format(host, site))
+                await notify.send_msgs("Time: {0}\n主机: {1}\n站点: {2}\n动作: 回收".format(current_time(), host, site))
         else:
             log.info("执行记录未发现有相关干预动作,开始检查摘除记录")
             count_down = len(DOWN.get(site, ()))
@@ -111,14 +112,16 @@ class _AsyncCheckThread(Thread):
                 log.info("开始记录执行摘取操作，再次出现时，执行回收操作")
             else:
                 log.info("当前有超过一半的主机已下线，对主机{}摘除操作将忽略".format(host))
-                await notify.send_msgs("站点{}有超过一半的主机已下线！".format(site))
+                warn_msg = "Time: {}\n主机: {}\nInfo: 当前站点{}包括该主机，已超过一半异常".format(
+                        current_time(), host, site)
+                await notify.send_msgs(warn_msg)
             if host not in ACTIONED:
                 ACTIONED[host] = dict()
                 ACTIONED[host][site] = {
                     'action_time': expiry_time,
                     'action_type': 'down'
                 }
-            await notify.send_msgs("主机: {0}\n站点: {1}\n动作: 摘除".format(host, site))
+            await notify.send_msgs("Time: {0}\n主机: {1}\n站点: {2}\n动作: 摘除".format(current_time(), host, site))
 
     async def _get_status(self, site: str, host: str) -> int:
         url = self._format_url(host)
@@ -144,7 +147,7 @@ class _AsyncCheckThread(Thread):
                 log.info("删除之前的错误记录")
                 del TOTAL[host][site]
             if ACTIONED.get(host, {}).get(site, {}).get('action_type'):
-                await notify.send_msgs("主机: {0}\n站点: {1}\n操作: 恢复上线".format(host, site))
+                await notify.send_msgs("Time: {0}\n主机: {1}\n站点: {2}\n操作: 恢复上线".format(current_time(), host, site))
                 log.info("之前有摘除操作，现在已恢复，将执行上线操作")
                 for ngx in nginxs:
                     up_thread = NgxActionThread(ngx, site, host, 'up')
