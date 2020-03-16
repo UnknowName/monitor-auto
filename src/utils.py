@@ -84,9 +84,7 @@ class _AsyncWechat(object):
         if not token:
             return ""
         try:
-            async with aiohttp.request("POST",
-                                       self.send_fmt.format(token=token),
-                                       json=msg_data) as resp:
+            async with aiohttp.request("POST", self.send_fmt.format(token=token), json=msg_data) as resp:
                 return await resp.json()
         except Exception as e:
             print(e)
@@ -129,43 +127,51 @@ class _AsyncEmail(object):
 
 
 class AsyncNotify(object):
-    def __init__(self, configfile: str):
-        with open(configfile) as f:
-            _conf = yaml.safe_load(f)
-        self.conf = _conf
+    def __init__(self, configs: list) -> None:
+        self.configs = configs
 
-    async def send_msgs(self, msg: str):
-        for name, v in self.conf.get("notify").items():
-            users = v.get('users')
-            if name == 'wechat':
-                corpid = v.get('corpid')
-                secret = v.get('secret')
-                wx = _AsyncWechat(corpid, secret)
-                coro = wx.send_msg(users, msg)
-            elif name == 'email':
-                server = v.get('server')
-                username = v.get('username')
-                password = v.get('password')
-                port = v.get('port')
-                em = _AsyncEmail(server, port, username, password)
-                coro = em.send_msg(users, msg)
-            elif name == 'dingding':
-                token = v.get('robot_token')
-                dding = _AsyncDDing(token)
-                coro = dding.send_msg(msg)
+    async def send_msgs(self, msg: str) -> None:
+        for _config in self.configs:
+            _notify_name = _config.get("type", "")
+            if _notify_name == "dingding":
+                _token = _config.get("robot_token")
+                _dding = _AsyncDDing(_token)
+                notify_coroutine = _dding.send_msg(msg)
+            elif _notify_name == "wechat":
+                _corpid = _config.get('corpid')
+                _secret = _config.get('secret')
+                _users = _config.get("users")
+                _wx = _AsyncWechat(_corpid, _secret)
+                notify_coroutine = _wx.send_msg(_users, msg)
+            elif _notify_name == 'email':
+                _server = _config.get('server')
+                _username = _config.get('username')
+                _password = _config.get('password')
+                _port = _config.get('port', 25)
+                _users = _config.get("users")
+                _em = _AsyncEmail(_server, _port, _username, _password)
+                notify_coroutine = _em.send_msg(_users, msg)
             else:
-                logging.warning("发现配置文件有不支持的通知方式{}".format(name))
                 continue
-            await coro
+            await notify_coroutine
+
+
+class AppConfig(object):
+    def __init__(self, config_path: str = "") -> None:
+        config_path = config_path if config_path else "config.yml"
+        with open(config_path) as f:
+            self._data = yaml.safe_load(f)
+
+    def get_attrs(self, attr: str) -> list:
+        return self._data.get(attr, [])
 
 
 if __name__ == "__main__":
     import asyncio
     loop = asyncio.get_event_loop()
-    n = AsyncNotify('config.yml')
+    config = AppConfig()
+    n = AsyncNotify(config.get_attrs("notify"))
     loop.run_until_complete(n.send_msgs("testinfo"))
-    """
     em = _AsyncEmail(server="smtp.sina.com", port=25, username="username@sina.com", password="password")
     loop.run_until_complete(em.send_msg(['user1@qq.com', 'username@sina.com'], "test"))
     loop.close()
-    """

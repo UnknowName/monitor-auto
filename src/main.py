@@ -1,8 +1,7 @@
 import time
 
-import yaml
 
-from utils import Log
+from utils import Log, AppConfig
 from check import MainThread
 
 log = Log(__name__).get_loger()
@@ -10,9 +9,8 @@ log.level = 20
 
 
 def main():
-    with open("config.yml") as f:
-        yml = yaml.safe_load(f)
-    sites = yml.get("sites")
+    config = AppConfig()
+    sites = config.get_attrs("sites")
     while True:
         t = MainThread(sites)
         t.setDaemon(True)

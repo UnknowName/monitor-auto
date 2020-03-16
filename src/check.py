@@ -2,23 +2,20 @@ import time
 import asyncio
 from threading import Thread
 
-import yaml
 import aiohttp
 
-from utils import Log, AsyncNotify
+from utils import Log, AsyncNotify, AppConfig
 from action import RecycleActionThread, NgxActionThread
 
 log = Log(__name__).get_loger()
 log.level = 20
-config_file = 'config.yml'
 TOTAL = dict()
 ACTIONED = dict()
 DOWN = dict()
-with open(config_file) as f:
-    conf = yaml.safe_load(f)
-nginxs = conf.get('nginxs')
-notify = AsyncNotify(config_file)
-current_time = lambda: time.strftime("%Y-%m-%d %H:%M:%S")
+config = AppConfig()
+nginxs = config.get_attrs('nginxs')
+notify = AsyncNotify(config.get_attrs("notify"))
+str_time = lambda: time.strftime("%Y-%m-%d %H:%M:%S")
 
 
 class _AsyncCheckThread(Thread):
@@ -29,6 +26,7 @@ class _AsyncCheckThread(Thread):
         self.timeout = timeout
         self.site = site
         self.servers = servers if servers else []
+        self.notify_fmt = "Time: {time}\n站点: {site}\n操作: {action}\n当前错误总数: {count}\n"
 
     @staticmethod
     def _format_url(host: str) -> str:
@@ -48,7 +46,7 @@ class _AsyncCheckThread(Thread):
                 expire_time = err_time + (1 * 60)
                 if expire_time >= curr_time:
                     log.debug("在一分钟之内的异常发生")
-                    if TOTAL[host][site]['count'] > 7:
+                    if TOTAL[host][site]['count'] >= 7:
                         log.debug("一分钟之内累计达到7次，删除该KEY记录，执行Action动作设置为True")
                         del TOTAL[host][site]
                         return True
@@ -74,8 +72,7 @@ class _AsyncCheckThread(Thread):
             TOTAL[host] = record
         return False
 
-    @staticmethod
-    async def _action(site: str, host: str, total_server: int) -> None:
+    async def _action(self, site: str, host: str, total_server: int) -> None:
         """action检查，检查该采取何种动作。回收还是摘除"""
         curr_time = time.time()
         expiry_time = time.time() + (3 * 60)
@@ -89,7 +86,8 @@ class _AsyncCheckThread(Thread):
                     recycle_t.start()
                     ACTIONED[host][site]['action_type'] = 'recycle'
                     ACTIONED[host][site]['action_time'] = expiry_time
-                    await notify.send_msgs("Time: {0}\n主机: {1}\n站点: {2}\n动作: 回收".format(current_time(), host, site))
+                    msg = self.notify_fmt.format(time=str_time(), site=site, action="回收", host=host, count=len(ACTIONED))
+                    await notify.send_msgs(msg)
                 else:
                     log.info("三分钟内执行过回收动作，此次忽略")
                     pass
@@ -99,15 +97,16 @@ class _AsyncCheckThread(Thread):
                 r_thread.start()
                 ACTIONED[host][site]['action_type'] = 'recycle'
                 ACTIONED[host][site]['action_time'] = expiry_time
-                await notify.send_msgs("Time: {0}\n主机: {1}\n站点: {2}\n动作: 回收".format(current_time(), host, site))
+                msg = self.notify_fmt.format(time=str_time(), site=site, action="回收", host=host, count=len(ACTIONED))
+                await notify.send_msgs(msg)
         else:
             log.info("执行记录未发现有相关干预动作,开始检查摘除记录")
             count_down = len(DOWN.get(site, ()))
             if count_down <= (total_server / 2):
                 log.info("下线记录中少于当前所有主机的一半，将对主机{}执行下线操作".format(host))
                 for ngx in nginxs:
-                    action_thread = NgxActionThread(ngx, site, host, 'down')
-                    action_thread.start()
+                    down_thread = NgxActionThread(ngx, site, host, 'down')
+                    down_thread.start()
                 DOWN.setdefault(site, set()).add(host)
                 log.info("开始记录执行摘取操作，再次出现时，执行回收操作")
                 # 第一次记录,初始化
@@ -117,11 +116,12 @@ class _AsyncCheckThread(Thread):
                         'action_time': expiry_time,
                         'action_type': 'down'
                     }
-                await notify.send_msgs("Time: {0}\n主机: {1}\n站点: {2}\n动作: 摘除".format(current_time(), host, site))
+                msg = self.notify_fmt.format(time=str_time(), site=site, action="下线", host=host, count=len(ACTIONED))
+                await notify.send_msgs(msg)
             else:
                 log.info("当前有超过一半的主机已下线，对主机{}摘除操作将忽略".format(host))
-                warn_msg = "Time: {0}\n站点: {2}\nInfo: 超过一半主机已下线，此次针对主机{1}的摘取动作忽略".format(
-                        current_time(), host, site)
+                warn_msg = "Time: {0}\n站点: {1}\nInfo: 一半主机已下线，跳过此次主机{2}的摘取动作\n当前错误总数:{3}".format(
+                        str_time(), site, host, len(ACTIONED))
                 await notify.send_msgs(warn_msg)
 
     async def _get_status(self, site: str, host: str) -> int:
@@ -153,7 +153,8 @@ class _AsyncCheckThread(Thread):
                     up_thread = NgxActionThread(ngx, site, host, 'up')
                     up_thread.start()
                 DOWN[site].remove(host)
-                await notify.send_msgs("Time: {0}\n主机: {1}\n站点: {2}\n操作: 恢复上线".format(current_time(), host, site))
+                msg = self.notify_fmt.format(time=str_time(), site=site, host=host, action="恢复上线", count=len(ACTIONED))
+                await notify.send_msgs(msg)
                 log.info("执行上线完成，删除该KEY键")
                 del ACTIONED[host][site]
 
@@ -175,14 +176,15 @@ class _AsyncCheckThread(Thread):
 
 
 class MainThread(Thread):
-    def __init__(self, data: dict) -> None:
+    def __init__(self, sites: list) -> None:
         Thread.__init__(self)
-        self.data = data
+        self.sites = sites
 
     def start(self) -> None:
-        for site, v in self.data.items():
-            servers = v.get('servers')
-            timeout = v.get('timeout')
+        for _site_dic in self.sites:
+            site = _site_dic.get("site")
+            servers = _site_dic.get('servers')
+            timeout = _site_dic.get('timeout')
             check_t = _AsyncCheckThread(site, servers, timeout)
             check_t.start()
         log.info("当前错误: {}, 摘除记录: {}".format(TOTAL, DOWN))

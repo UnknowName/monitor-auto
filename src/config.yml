@@ -1,14 +1,15 @@
 sites:
-  test.aaa.com:
-    timeout: 20
+  - site: www.aaa.com
+    timeout: 2
     servers:
-    - 128.0.255.27:80
+    - 128.0.255.30:80
+    - 128.0.255.25:80
     gateway_type: nginx
 
-  test.bbb.com:
-    timeout: 20
+  - site: test.bbb.com
+    timeout: 2
     servers:
-      - 128.0.255.27:82
+      - 128.0.255.30:80
     gateway_type: nginx
 
 nginxs:
@@ -31,5 +32,5 @@ notify:
 #      - username@domain.com
 #      - user2@domain.com
 
-  dingding:
-    robot_token: 50f790567236515eb2a228a102808a7d4fd365c78a37f45a8d2f6b3b5a4bd156
+ -  type: dingding
+    robot_token: bcd1ea37b19b1304227b9af2f4c6ad1cde4f4e4c305288ee533bd98331156038

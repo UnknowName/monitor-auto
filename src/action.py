@@ -63,7 +63,7 @@ class NgxActionThread(_BaseActionThread):
       - name: {site} down {host}
         lineinfile:
           path: /etc/nginx/conf.d/{site}.conf
-          regexp: '(\s+?server\s+?{host}.*)'
+          regexp: '(\s+?\bserver\b\s+?{host}.*)'
           line: '#\1'
           backrefs: yes
         
@@ -79,7 +79,8 @@ class NgxActionThread(_BaseActionThread):
       - name: {site}  Up {host}
         lineinfile:
           path: /etc/nginx/conf.d/{site}.conf
-          regexp: '#(\s+?server\s+?{host}.*)'
+          # backup regexp: '#(\s+?server\s+?{host}.*)'
+          regexp: '\s+?#(\s+?\bserver\b\s+?{host}.*)'
           line: '\1'
           backrefs: yes
         
