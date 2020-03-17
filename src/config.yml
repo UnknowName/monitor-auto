@@ -2,8 +2,9 @@ sites:
   - site: www.aaa.com
     timeout: 2
     servers:
-    - 128.0.255.30:80
+    - 128.0.255.10:9090
     - 128.0.255.25:80
+    - 128.0.255.25:8090
     gateway_type: nginx
 
   - site: test.bbb.com

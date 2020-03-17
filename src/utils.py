@@ -166,6 +166,17 @@ class AppConfig(object):
         return self._data.get(attr, [])
 
 
+class Counter(dict):
+    """继承dict，因为特殊的数据结构，增加一个计数方法"""
+
+    @property
+    def count(self):
+        _count = 0
+        for v in self.values():
+            _count += len(v)
+        return _count
+
+
 if __name__ == "__main__":
     import asyncio
     loop = asyncio.get_event_loop()
@@ -175,3 +186,15 @@ if __name__ == "__main__":
     em = _AsyncEmail(server="smtp.sina.com", port=25, username="username@sina.com", password="password")
     loop.run_until_complete(em.send_msg(['user1@qq.com', 'username@sina.com'], "test"))
     loop.close()
+    # {'www.aaa.com': {'128.0.255.25:8090', '128.0.255.10:9090'}, 'test.bbb.com': {'128.0.255.30:80'}}
+    # { '172.18.203.241': {},
+    #   '172.18.203.244': {},
+    #   '172.18.203.243': {},
+    #   '172.18.0.212': {'shopapi.sissyun.com.cn': {'count': 5, 'err_time': 1584413186.5710473}},
+    #   '172.18.0.213': {'shopapi.sissyun.com.cn': {'count': 2, 'err_time': 1584413186.571407}},
+    #   '172.18.0.216': {'shopapi.sissyun.com.cn': {'count': 2, 'err_time': 1584413186.571663}},
+    # }
+    c = Counter()
+    c["www.aaa.com"] = {'128.0.255.25:8090', '128.0.255.10:9090'}
+    c['test.bbb.com'] = {'128.0.255.30:80'}
+    print(c.count)

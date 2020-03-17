@@ -4,14 +4,14 @@ from threading import Thread
 
 import aiohttp
 
-from utils import Log, AsyncNotify, AppConfig
+from utils import Log, AsyncNotify, AppConfig, Counter
 from action import RecycleActionThread, NgxActionThread
 
 log = Log(__name__).get_loger()
 log.level = 20
-TOTAL = dict()
-ACTIONED = dict()
-DOWN = dict()
+TOTAL = Counter()
+ACTIONED = Counter()
+DOWN = Counter()
 config = AppConfig()
 nginxs = config.get_attrs('nginxs')
 notify = AsyncNotify(config.get_attrs("notify"))
@@ -26,7 +26,7 @@ class _AsyncCheckThread(Thread):
         self.timeout = timeout
         self.site = site
         self.servers = servers if servers else []
-        self.notify_fmt = "Time: {time}\n站点: {site}\n操作: {action}\n当前错误总数: {count}\n"
+        self.notify_fmt = "Time: {time}\n站点: {site}\n主机: {host}\n操作: {action}\n当前错误总数: {count}\n"
 
     @staticmethod
     def _format_url(host: str) -> str:
@@ -86,7 +86,8 @@ class _AsyncCheckThread(Thread):
                     recycle_t.start()
                     ACTIONED[host][site]['action_type'] = 'recycle'
                     ACTIONED[host][site]['action_time'] = expiry_time
-                    msg = self.notify_fmt.format(time=str_time(), site=site, action="回收", host=host, count=len(ACTIONED))
+                    msg = self.notify_fmt.format(time=str_time(), site=site, action="回收",
+                                                 host=host, count=ACTIONED.count)
                     await notify.send_msgs(msg)
                 else:
                     log.info("三分钟内执行过回收动作，此次忽略")
@@ -97,7 +98,7 @@ class _AsyncCheckThread(Thread):
                 r_thread.start()
                 ACTIONED[host][site]['action_type'] = 'recycle'
                 ACTIONED[host][site]['action_time'] = expiry_time
-                msg = self.notify_fmt.format(time=str_time(), site=site, action="回收", host=host, count=len(ACTIONED))
+                msg = self.notify_fmt.format(time=str_time(), site=site, action="回收", host=host, count=ACTIONED.count)
                 await notify.send_msgs(msg)
         else:
             log.info("执行记录未发现有相关干预动作,开始检查摘除记录")
@@ -116,12 +117,19 @@ class _AsyncCheckThread(Thread):
                         'action_time': expiry_time,
                         'action_type': 'down'
                     }
-                msg = self.notify_fmt.format(time=str_time(), site=site, action="下线", host=host, count=len(ACTIONED))
+                msg = self.notify_fmt.format(time=str_time(), site=site, action="下线", host=host, count=ACTIONED.count)
                 await notify.send_msgs(msg)
             else:
+                ACTIONED[host] = dict()
+                ACTIONED[host][site] = {
+                    'action_time': expiry_time,
+                    'action_type': 'down'
+                }
                 log.info("当前有超过一半的主机已下线，对主机{}摘除操作将忽略".format(host))
                 warn_msg = "Time: {0}\n站点: {1}\nInfo: 一半主机已下线，跳过此次主机{2}的摘取动作\n当前错误总数:{3}".format(
-                        str_time(), site, host, len(ACTIONED))
+                        str_time(), site, host, ACTIONED.count)
+                # 虽然实际没有执行相应动作，但是在记录中要记录,以便后续执行回收动作以及恢复提醒
+                DOWN.setdefault(site, set()).add(host)
                 await notify.send_msgs(warn_msg)
 
     async def _get_status(self, site: str, host: str) -> int:
@@ -132,6 +140,8 @@ class _AsyncCheckThread(Thread):
                 async with session.get(url, timeout=self.timeout) as resp:
                     return resp.status
         except Exception as e:
+            if not str(e):
+                e = "Check Coroutine Timeout, It mean HTTP Get Timeout"
             log.warning(e)
             return 504
 
@@ -153,7 +163,8 @@ class _AsyncCheckThread(Thread):
                     up_thread = NgxActionThread(ngx, site, host, 'up')
                     up_thread.start()
                 DOWN[site].remove(host)
-                msg = self.notify_fmt.format(time=str_time(), site=site, host=host, action="恢复上线", count=len(ACTIONED))
+                msg = self.notify_fmt.format(time=str_time(), site=site, host=host,
+                                             action="恢复上线", count=ACTIONED.count - 1)
                 await notify.send_msgs(msg)
                 log.info("执行上线完成，删除该KEY键")
                 del ACTIONED[host][site]
