@@ -5,7 +5,7 @@ from threading import Thread
 import aiohttp
 
 from utils import Log, AsyncNotify, AppConfig, Counter
-from action import RecycleActionThread, NgxActionThread
+from action import KillActionThread, NgxActionThread
 
 log = Log(__name__).get_loger()
 log.level = 20
@@ -82,11 +82,11 @@ class _AsyncCheckThread(Thread):
             if action_time > curr_time:
                 log.info("三分钟之内执行过action操作,继续判断action的类型")
                 if ACTIONED[host][site]['action_type'] == 'down':
-                    recycle_t = RecycleActionThread(site, host)
-                    recycle_t.start()
+                    kill_t = KillActionThread(site, host)
+                    kill_t.start()
                     ACTIONED[host][site]['action_type'] = 'recycle'
                     ACTIONED[host][site]['action_time'] = expiry_time
-                    msg = self.notify_fmt.format(time=str_time(), site=site, action="回收",
+                    msg = self.notify_fmt.format(time=str_time(), site=site, action="Kill进程",
                                                  host=host, count=ACTIONED.count)
                     await notify.send_msgs(msg)
                 else:
@@ -94,8 +94,8 @@ class _AsyncCheckThread(Thread):
                     pass
             else:
                 log.info("三分钟之前执行过action操作，此次一次介入，执行回收操作")
-                r_thread = RecycleActionThread(site, host)
-                r_thread.start()
+                kill_thread = KillActionThread(site, host)
+                kill_thread.start()
                 ACTIONED[host][site]['action_type'] = 'recycle'
                 ACTIONED[host][site]['action_time'] = expiry_time
                 msg = self.notify_fmt.format(time=str_time(), site=site, action="回收", host=host, count=ACTIONED.count)

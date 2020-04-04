@@ -106,8 +106,23 @@ class NgxActionThread(_BaseActionThread):
         self.execute_action(ansible_playbook)
 
 
+class KillActionThread(_BaseActionThread):
+    _KILL_TEM = r"""
+    - hosts:
+      - {host}
+      gather_facts: False
+      tasks:
+        - name: Kill Processlist
+        win_command: taskkill /F /IM SiXunMall.Web.Host.exe
+    """
+
+    def start(self) -> None:
+        ansible_playbook = self._create_task_yaml(self._KILL_TEM, "128.0.255.10", "")
+        self.execute_action(ansible_playbook)
+
+
 if __name__ == '__main__':
-    # r = RecycleActionThread("www.aa.com", "128.0.255.28:80")
-    # r.start()
-    t = NgxActionThread("128.0.100.170", "www.aa.com", "128.0.255.28:80", 'down')
-    t.start()
+    # t = NgxActionThread("128.0.100.170", "www.aa.com", "128.0.255.28:80", 'down')
+    # t.start()
+    k = KillActionThread("", "")
+    k.start()
