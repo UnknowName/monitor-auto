@@ -113,7 +113,7 @@ class KillActionThread(_BaseActionThread):
       gather_facts: False
       tasks:
         - name: Kill Processlist
-        win_command: taskkill /F /IM SiXunMall.Web.Host.exe
+          win_command: taskkill /F /IM SiXunMall.Web.Host.exe
     """
 
     def start(self) -> None:
