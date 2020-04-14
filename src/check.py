@@ -162,7 +162,8 @@ class _AsyncCheckThread(Thread):
                 for ngx in nginxs:
                     up_thread = NgxActionThread(ngx, site, host, 'up')
                     up_thread.start()
-                DOWN[site].remove(host)
+                if host in DOWN.get(site, set()):
+                    DOWN[site].remove(host)
                 msg = self.notify_fmt.format(time=str_time(), site=site, host=host,
                                              action="恢复上线", count=ACTIONED.count - 1)
                 await notify.send_msgs(msg)
