@@ -107,7 +107,7 @@ class NgxActionThread(_BaseActionThread):
 
 
 class KillActionThread(_BaseActionThread):
-    _KILL_TEM = r"""
+    _KILL_YAML_TMP = r"""
     - hosts:
       - {host}
       gather_facts: False
@@ -117,7 +117,7 @@ class KillActionThread(_BaseActionThread):
     """
 
     def start(self) -> None:
-        ansible_playbook = self._create_task_yaml(self._KILL_TEM, "128.0.255.10", "")
+        ansible_playbook = self._create_task_yaml(self._KILL_YAML_TMP, self.host, "")
         self.execute_action(ansible_playbook)
 
 
