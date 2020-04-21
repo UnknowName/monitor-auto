@@ -1,0 +1,10 @@
+monitor:
+  build:
+    context: .
+    dockerfile: "Dockerfile"
+  image: monitor
+  container_name: monitor
+  net: host
+  restart: always
+  environment:
+    - TZ=Asia/Shanghai

@@ -14,4 +14,4 @@ RUN adduser -D -u 120002 -h /opt/app app \
     && rm -rf /var/cache/apk/*
 RUN chown -R app:app /opt/app
 USER app
-CMD ["python", "main.py"]
+CMD ["python", "-u", "main.py"]
