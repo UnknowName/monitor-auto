@@ -83,6 +83,10 @@ class NgxActionThread(_BaseActionThread):
           regexp: '\s+?#(\s+?\bserver\b\s+?{host}.*)'
           line: '\1'
           backrefs: yes
+          
+      - name: Pause 60 second
+        pause:
+          minutes: 1
         
       - name: Reload NGINX
         shell: systemctl reload nginx || nginx -s reload
