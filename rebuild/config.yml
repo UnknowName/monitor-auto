@@ -1,0 +1,41 @@
+sites:
+  - site: www.aaa.com
+    timeout: 5
+    max_failed: 5
+    min_active: 1
+    servers:
+      - 128.0.255.10:9090
+      - 128.0.255.25:80
+      - 128.0.255.25:8090
+    gateway_type: nginx
+
+  - site: test.bbb.com
+    max_failed: 7
+    timeout: 5
+    min_active: 1
+    servers:
+      - 128.0.255.30:80
+    gateway_type: nginx
+
+nginxs:
+  - 128.0.255.10
+  - 128.0.100.170
+
+notify:
+#  wechat:
+#    corpid: wechat-corpid
+#    secret: wechat-secret
+#    users:
+#      - tkggvfhpce2
+#      - user2
+
+#  email:
+#    server: smtp.domain.com
+#    username: username
+#    password: password
+#    users:
+#      - username@domain.com
+#      - user2@domain.com
+
+ -  type: dingding
+    robot_token: bcd1ea37b19b1304227b9af2f4c6ad1cde4f4e4c305288ee533bd98331156038
