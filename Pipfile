@@ -9,6 +9,7 @@ verify_ssl = true
 aiohttp = "*"
 pyyaml = "*"
 aiosmtplib = "*"
+jinja2 = "*"
 
 [requires]
 python_version = "3.7"
