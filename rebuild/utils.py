@@ -1,8 +1,11 @@
+import os
 from threading import Thread
 from subprocess import run, PIPE, STDOUT
 
 import yaml
 import jinja2
+
+from rebuild.notify import AsyncNotify
 
 
 class NoServersConfigError(Exception):
@@ -20,7 +23,7 @@ class AppConfig(object):
 
     def __init__(self, filename: str):
         filename = filename if filename else "config.yml"
-        with open(filename) as f:
+        with open(filename, encoding="utf8") as f:
             self._data = yaml.safe_load(f)
 
     def get_attrs(self, attr: str) -> list:
@@ -30,6 +33,7 @@ class AppConfig(object):
 class Option(object):
     _instance = None
     _attrs = dict()
+    _notify = None
 
     def __new__(cls, *args, **kwargs):
         if not cls._instance:
@@ -43,6 +47,13 @@ class Option(object):
         for domain_config in domains:
             domain_name = domain_config.get("site")
             self._attrs[domain_name] = domain_config
+
+    def add_notify(self, notify: AsyncNotify) -> None:
+        if not self._notify:
+            self._notify = notify
+
+    def get_notify(self) -> AsyncNotify:
+        return self._notify
 
     def get_nginxs(self) -> list:
         return self._attrs.get("nginxs")
@@ -74,15 +85,6 @@ class _BaseActionThread(Thread):
         else:
             raise Exception("Action type only error or ok")
 
-    # 暂未用到
-    def add_observe(self, observe):
-        """
-        增加被观察者，用来执行相关动作后，将计数重新重置为0
-        :param observe:
-        :return:
-        """
-        self._observe = observe
-
     @staticmethod
     def execute_action(playbook: str) -> None:
         cmd = "ansible-playbook {}".format(playbook)
@@ -94,7 +96,6 @@ class _BaseActionThread(Thread):
         print(std)
 
 
-# TODO 执行完相应的动作后，要发送通知出来
 class NginxAction(_BaseActionThread):
     """
     发生错误的动作,从NGINX上下线
@@ -110,7 +111,7 @@ class NginxAction(_BaseActionThread):
       - name: Gateway down host {{ host }}
         lineinfile:
           path: /etc/nginx/conf.d/{{ domain }}.conf
-          regexp: '(\s+?\bserver\b\s+?\b{{ host }}\b.*)'
+          regexp: '(\s{0,}\bserver\b\s+?\b{{ host }}\b.*)'
           line: '#\1'
           backrefs: yes
         register: stdout
@@ -136,8 +137,8 @@ class NginxAction(_BaseActionThread):
       tasks:
       - name: Gateway up host {{ host }}
         path: /etc/nginx/conf.d/{{ domain }}.conf
-        regexp: '\s+?#(\s+?\bserver\b\s+?\b{{ host }}\b.*)'
-        line: '\1'
+        regexp: '(\s{0,})#(\s{0,}\bserver\b\s+?\b{{ host }}\b.*)'
+        line: '\1\2'
         backrefs: yes
         register: stdout
     
@@ -155,26 +156,19 @@ class NginxAction(_BaseActionThread):
             task_yaml = self._down_tmpl
         else:
             task_yaml = self._up_tmpl
-        filename = "{domain}_{host}_{action}.yml".format(domain=domain,
-                                                         host=host.replace(":", "_"),
-                                                         action=self._action_type)
-        with open(filename, 'w') as f:
+        _filename = "{domain}_{host}_{action}.yml".format(domain=domain,
+                                                          host=host.replace(":", "_"),
+                                                          action=self._action_type)
+        task_file = os.path.join(os.path.pardir, "tasks_yaml", _filename)
+        with open(task_file, 'w') as f:
             f.write(jinja2.Template(task_yaml).render(nginxs=nginxs, host=host, domain=domain))
-            return filename
+            return task_file
 
     def start(self) -> None:
         if not self._action_type:
             raise Exception("Before Run start, Please call set_action_type(name: str)")
         playbook = self._create_yaml(self._host, self._domain)
         self.execute_action(playbook)
-
-    # 暂未用到
-    # observer: DomainRecord
-    def execute(self, observe):
-        if observe.count > 2:
-            self.start()
-            # 执行下线后，不能重置为0，要看恢复没有，恢复后将计数变为0
-            # observe.set_count(0)
 
 
 if __name__ == '__main__':

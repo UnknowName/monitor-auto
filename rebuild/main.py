@@ -2,11 +2,14 @@ import asyncio
 
 from rebuild.utils import AppConfig
 from rebuild.check import DomainRecord, AsyncCheck, Option
+from rebuild.notify import AsyncNotify
 
 
 async def main():
     config = AppConfig("config.yml")
+    notify = AsyncNotify(config.get_attrs("notify"))
     check_option = Option(config)
+    check_option.add_notify(notify)
     domains = config.get_attrs("sites")
     sites = [domain.get("site") for domain in domains]
     records = {domain: DomainRecord(domain, check_option) for domain in sites}
@@ -24,4 +27,3 @@ async def main():
 if __name__ == '__main__':
     import time
     asyncio.run(main())
-    print("total", time.perf_counter())

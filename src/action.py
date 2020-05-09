@@ -42,7 +42,7 @@ class RecycleActionThread(_BaseActionThread):
     - hosts:
       - {host}
       gather_facts: False
-      tasks:
+      tasks_yaml:
       - name: Restart {site} IIS WebApplicationPool
         win_iis_webapppool:
           name: {site}
@@ -59,7 +59,7 @@ class NgxActionThread(_BaseActionThread):
     - hosts:
       - {ngx}
       gather_facts: False
-      tasks:
+      tasks_yaml:
       - name: {site} down {host}
         lineinfile:
           path: /etc/nginx/conf.d/{site}.conf
@@ -75,7 +75,7 @@ class NgxActionThread(_BaseActionThread):
     - hosts:
       - {ngx}
       gather_facts: False
-      tasks:
+      tasks_yaml:
       - name: {site}  Up {host}
         lineinfile:
           path: /etc/nginx/conf.d/{site}.conf

@@ -99,3 +99,5 @@ ansible_port=5986
 ansible_winrm_scheme=https
 ansible_winrm_server_cert_validation=ignore
 ```
+
+如果需要部分自动执行，另一些不自动，可以将`Ansible`的主机清单文件中，不想自动干预的主机注释
