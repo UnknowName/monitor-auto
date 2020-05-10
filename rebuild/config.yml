@@ -1,20 +1,20 @@
 sites:
   - site: www.aaa.com
     timeout: 5
-    # 一分钟之内最大允许的异常状态次数
+    # 一分钟之内最大允许的异常状态次数,达到后会采取动作
     max_failed: 5
-    min_active: 1
-    # 最大允许下线的主机，达到该值后，新主机即使异常也不执行任何动作
+    # 最大允许下线的主机，达到该值后，新主机即使异常也不执行任何动作,但会发送通知。
+    # 如果该值和服务器数量一样多，就不执行动作，只发送通知
     max_inactive: 1
     servers:
       - 128.0.255.10:9090
       - 128.0.255.10:5000
+      - 128.0.255.10:9092
     gateway_type: nginx
 
   - site: test.bbb.com
     max_failed: 7
     timeout: 5
-    min_active: 1
     max_inactive: 1
     servers:
       - 128.0.255.30:80

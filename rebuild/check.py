@@ -33,13 +33,18 @@ class _HostRecord(object):
         now = time.time()
         # 异常在一分钟之内的，执行计数器加1
         if status > 400 and self._expire_time > now:
-            self._count += 1
+            # 如果是错误状态，计数停止，发送通知
+            if self.is_error():
+                await domain_record.add_error(self._host)
+            # 非在错误状态中，计数加1
+            else:
+                self._count += 1
             # 当执行错误动作时，需要同时满足三个条件，以免进入反复重启的恶性循环,两次操作（重启/上线）间隔不能在一分钟之内
             if self.is_error() and self._can_safe_action() and domain_record.can_action(self._host):
                 self._run_action("error")
                 await self._init()
                 domain_record.add_inactive(self._host)
-                msg = "Time:  {time}\nDomain:  {domain}\nHost:  {host}\nAction:  {action}\nTotalError: {total}".format(
+                msg = "Time:\t{time}\nDomain:\t{domain}\nHost:\t{host}\nInfo:\t{action}\nTotalError:\t{total}".format(
                     time=time.strftime("%Y-%m-%d %H:%M:%S"), domain=self._domain,
                     host=self._host, action="Restart IIS Web Site", total=domain_record.get_error()
                 )
@@ -54,7 +59,7 @@ class _HostRecord(object):
                 self._run_action("ok")
                 await self._init()
                 domain_record.add_active(self._host)
-                msg = "Time: {time}\nDomain:  {domain}\nHost:  {host}\nAction: {action}\nTotalError: {total}".format(
+                msg = "Time:\t{time}\nDomain:\t{domain}\nHost:\t{host}\nInfo:\t{action}\nTotalError:\t{total}".format(
                     time=time.strftime("%Y-%m-%d %H:%M:%S"), domain=self._domain,
                     host=self._host, action="Recover", total=domain_record.get_error()
                 )
@@ -62,8 +67,6 @@ class _HostRecord(object):
         # 最后都要更新最近状态和失效时间,将虽然异常，但没有执行动作的主机写回DomainRecord的total_error
         self._latest_status = status
         self._expire_time = now + (1 * 60)
-        if self.is_error():
-            await domain_record.add_error(self._host)
 
     def is_error(self) -> bool:
         return self._count > self._max_failed
@@ -124,13 +127,10 @@ class DomainRecord(object):
         return "DomainRecord(domain={}, max_failed={}, {})".format(self._domain, self._max_failed, self._max_inactive)
 
     # 不主动调用，当调用add_error时触发
-    # TODO 当恢复时，如何将消息发送出来
-    async def _report_error(self) -> None:
+    async def _report_error(self, host: str) -> None:
         now = time.strftime("%Y-%m-%d %H:%M:%S")
-        msg = "Time:  {time}\nDomain:  {domain}\nErrorHosts:  {hosts}\n".format(
-            time=now,
-            domain=self._domain,
-            hosts=",".join(self._current_errors)
+        msg = "Time:  {time}\nDomain:  {domain}\nInfo: {host} Error Occur\nErrorHosts:  \n{hosts}".format(
+            time=now, domain=self._domain, host=host, hosts="\n".join(self._current_errors)
         )
         await self._notify.send_msgs(msg)
 
@@ -153,7 +153,7 @@ class DomainRecord(object):
     async def add_error(self, host: str) -> None:
         if host not in self._current_errors:
             self._current_errors.add(host)
-            await self._report_error()
+            await self._report_error(host)
 
     def can_action(self, host: str) -> bool:
         # 如果是之前已经下线的主机，直接返回True
@@ -166,7 +166,7 @@ class DomainRecord(object):
 
     async def calculate(self, check_result: tuple) -> None:
         host, status = check_result
-        if status < 400 and host not in self._inactives:
+        if (status < 400) and (host not in self._current_errors) and (host not in self._inactives):
             # 说明正常，删除之前记录的对象，节省内存
             try:
                 del self._record[host]
@@ -181,7 +181,7 @@ class DomainRecord(object):
                 self._record.setdefault(host, host_record)
             await self._record[host].update(self, status)
         if self._record:
-            print("Current Error", self._record)
+            print("{} Current Error {}".format(self._domain, self._record))
 
 
 class AsyncCheck(object):
