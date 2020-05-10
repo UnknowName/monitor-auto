@@ -5,7 +5,7 @@ from subprocess import run, PIPE, STDOUT
 import yaml
 import jinja2
 
-from rebuild.notify import AsyncNotify
+from notify import AsyncNotify
 
 
 class NoServersConfigError(Exception):
@@ -136,10 +136,11 @@ class NginxAction(_BaseActionThread):
       gather_facts: False
       tasks:
       - name: Gateway up host {{ host }}
-        path: /etc/nginx/conf.d/{{ domain }}.conf
-        regexp: '(\s{0,})#(\s{0,}\bserver\b\s+?\b{{ host }}\b.*)'
-        line: '\1\2'
-        backrefs: yes
+        lineinfile:
+          path: /etc/nginx/conf.d/{{ domain }}.conf
+          regexp: '(\s{0,})#(\s{0,}\bserver\b\s+?\b{{ host }}\b.*)'
+          line: '\1\2'
+          backrefs: yes
         register: stdout
     
       - name: Reload NGINX

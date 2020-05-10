@@ -1,12 +1,10 @@
 monitor:
-  build:
-    context: .
-    docker-file: "Dockerfile"
   image: monitor-auto
   container_name: monitor-auto
   net: host
   environment:
     - TZ=Asia/Shanghai
   volumes:
-    - ./config.yml:/opt/app/config.yml
+    - ./ansible_hosts:/etc/ansible/hosts
+    - ./config.yml:/opt/app/src/config.yml
   restart: always

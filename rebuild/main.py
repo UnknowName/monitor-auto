@@ -1,8 +1,8 @@
 import asyncio
 
-from rebuild.utils import AppConfig
-from rebuild.check import DomainRecord, AsyncCheck, Option
-from rebuild.notify import AsyncNotify
+from utils import AppConfig
+from check import DomainRecord, AsyncCheck, Option
+from notify import AsyncNotify
 
 
 async def main():

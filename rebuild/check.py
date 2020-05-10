@@ -3,9 +3,9 @@ import asyncio
 
 import aiohttp
 
-from rebuild.notify import AsyncNotify
-from rebuild.utils import NoServersConfigError
-from rebuild.utils import AppConfig, NginxAction, Option
+from notify import AsyncNotify
+from utils import NoServersConfigError
+from utils import AppConfig, NginxAction, Option
 
 
 class _HostRecord(object):
