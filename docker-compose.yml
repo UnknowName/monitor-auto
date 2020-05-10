@@ -1,0 +1,12 @@
+monitor:
+  build:
+    context: .
+    docker-file: "Dockerfile"
+  image: monitor-auto
+  container_name: monitor-auto
+  net: host
+  environment:
+    - TZ=Asia/Shanghai
+  volumes:
+    - ./config.yml:/opt/app/config.yml
+  restart: always
