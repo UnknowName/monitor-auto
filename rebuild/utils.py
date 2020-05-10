@@ -165,7 +165,7 @@ class NginxAction(_BaseActionThread):
             f.write(jinja2.Template(task_yaml).render(nginxs=nginxs, host=host, domain=domain))
             return task_file
 
-    def start(self) -> None:
+    def run(self) -> None:
         if not self._action_type:
             raise Exception("Before Run start, Please call set_action_type(name: str)")
         playbook = self._create_yaml(self._host, self._domain)
