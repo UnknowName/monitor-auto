@@ -6,6 +6,10 @@ sites:
     # 最大允许下线的主机，达到该值后，新主机即使异常也不执行任何动作,但会发送通知。
     # 如果该值和服务器数量一样多，就不执行动作，只发送通知
     max_inactive: 1
+    # 通过读取NGINX中的配置文件来获取后端Servers，但要求后端端口要一致
+    config_file: /etc/nginx/conf.d/www.aaa.com.conf
+    backend_port: 80
+    # upstream_file与servers同时存在时，优先读取servers里面的值
     servers:
       - 128.0.255.10:9090
       - 128.0.255.10:5000
@@ -41,4 +45,4 @@ notify:
 #      - user2@domain.com
 
  -  type: dingding
-    robot_token: bcd1ea37b19b1304227b9af2f4c6ad1cde4f4e4c305288ee533bd98331156038
+    robot_token: 01ce5cecb1343bbb6d59550efbca1567c2b08ea8843d966f1c76b309308c25b5
