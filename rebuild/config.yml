@@ -19,6 +19,7 @@ sites:
   - site: test.bbb.com
     max_failed: 7
     timeout: 5
+    # 不要 >= len(servers)!
     max_inactive: 1
     servers:
       - 128.0.255.30:80

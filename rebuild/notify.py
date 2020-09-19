@@ -7,6 +7,10 @@ import aiohttp
 import aiosmtplib
 import aiosmtplib.auth
 
+from utils import MyLog
+
+log = MyLog(__name__)
+
 
 class _AsyncWechat(object):
     token_fmt = 'https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid={corp_id}&corpsecret={secret}'
@@ -102,9 +106,11 @@ class _AsyncEmail(object):
 
 class AsyncNotify(object):
     def __init__(self, configs: list) -> None:
-        self.configs = configs
+        self.configs = configs if configs else []
 
     async def send_msgs(self, msg: str) -> None:
+        if not self.configs:
+            log.logger.warning("No Notify channel config set, Can not send any messages")
         for _config in self.configs:
             _notify_name = _config.get("type", "")
             if _notify_name == "dingding":

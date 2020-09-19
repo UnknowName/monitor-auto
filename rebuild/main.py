@@ -1,27 +1,31 @@
 import asyncio
 
-from utils import AppConfig
-from check import DomainRecord, AsyncCheck, Option
+from utils import AppConfig, MyLog
+from check import DomainRecord, AsyncCheck
 from notify import AsyncNotify
+
+log = MyLog(__name__)
 
 
 async def main():
-    config = AppConfig("config.yml")
-    notify = AsyncNotify(config.get_attrs("notify"))
-    check_option = Option(config)
-    check_option.add_notify(notify)
-    domains = config.get_attrs("sites")
+    app_config = AppConfig("config.yml")
+    notify = AsyncNotify(app_config.get_attrs("notify"))
+    domains = app_config.get_attrs("sites")
     sites = [domain.get("site") for domain in domains]
-    records = {domain: DomainRecord(domain, check_option) for domain in sites}
+    # 在这里定义，就可以在不同协程间共享计数数据
+    domain_configs = {domain: app_config.get_domain_config(domain) for domain in sites}
+    records = {domain: DomainRecord(notify, domain_configs.get(domain)) for domain in sites}
     while True:
         tasks = []
         tasks_append = tasks.append
         for domain in domains:
             _domain = domain.get("site")
-            t = AsyncCheck(_domain, records.get(_domain), check_option)
-            tasks_append(t.check_servers())
+            t = AsyncCheck(records.get(_domain))
+            servers = domain_configs.get(_domain).get_servers()
+            tasks_append(t.check_servers(servers))
         await asyncio.wait(tasks)
         time.sleep(1)
+        log.logger.info("start new check")
 
 
 if __name__ == '__main__':

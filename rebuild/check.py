@@ -5,7 +5,10 @@ import aiohttp
 
 from notify import AsyncNotify
 from utils import NoServersConfigError
-from utils import AppConfig, NginxAction, Option
+from utils import AppConfig, NginxAction, DomainConfig, MyLog
+
+MAX_FAILED = 7
+log = MyLog(__name__)
 
 
 class _HostRecord(object):
@@ -26,23 +29,26 @@ class _HostRecord(object):
     async def _init(self) -> None:
         self._count = 0
         self._action_time = time.time() + 100
+        self._action_obj = None
 
     # TODO 未达到最少要求的活跃主机时异常时，发送通知出来，或者说只要主机达到max_failed，就应该发送通知
-    # TODO 目前是只有执行了相关动作后才会有通知发出
     async def update(self, domain_record, status: int) -> None:
         now = time.time()
+        # log.logger.debug("in HostRecord method------------------")
         # 异常在一分钟之内的，执行计数器加1
         if status > 400 and self._expire_time > now:
-            # 如果是错误状态，计数停止，发送通知
+            # 如果是错误状态即可以执行动作了，达到最大失败次数后计数停止，发送通知
+            # log.logger.debug("error status------------------")
             if self.is_error():
                 await domain_record.add_error(self._host)
-            # 非在错误状态中，计数加1
+            # 还没达到触发动作的条件，计数继续加1
             else:
                 self._count += 1
             # 当执行错误动作时，需要同时满足三个条件，以免进入反复重启的恶性循环,两次操作（重启/上线）间隔不能在一分钟之内
             if self.is_error() and self._can_safe_action() and domain_record.can_action(self._host):
                 self._run_action("error")
                 await self._init()
+                # 更新非活跃主机
                 domain_record.add_inactive(self._host)
                 msg = "Time:\t{time}\nDomain:\t{domain}\nHost:\t{host}\nInfo:\t{action}\nTotalError:\t{total}".format(
                     time=time.strftime("%Y-%m-%d %H:%M:%S"), domain=self._domain,
@@ -54,16 +60,20 @@ class _HostRecord(object):
             self._count = 1
         else:
             # 正常状态码就不考虑时间,将之前的计数减一，减到0时会触发上线动作
-            self._count -= 1
+            # 加一层判断，防止整数溢出
+            if self._count >= 1:
+                self._count -= 1
             if self.is_ok():
                 self._run_action("ok")
                 await self._init()
+                # 更新活跃主机记录
                 domain_record.add_active(self._host)
                 msg = "Time:\t{time}\nDomain:\t{domain}\nHost:\t{host}\nInfo:\t{action}\nTotalError:\t{total}".format(
                     time=time.strftime("%Y-%m-%d %H:%M:%S"), domain=self._domain,
                     host=self._host, action="Recover", total=domain_record.get_error()
                 )
                 await self._notify.send_msgs(msg)
+
         # 最后都要更新最近状态和失效时间,将虽然异常，但没有执行动作的主机写回DomainRecord的total_error
         self._latest_status = status
         self._expire_time = now + (1 * 60)
@@ -93,8 +103,13 @@ class _HostRecord(object):
         return True
 
     def _run_action(self, name: str) -> None:
-        self._action_obj.set_action_type(name)
-        self._action_obj.start()
+        if self._action_obj:
+            self._action_obj.set_action_type(name)
+            self._action_obj.start()
+            self._action_obj = None
+        else:
+            # 如果为空，就需要重新初始化Action对象
+            log.logger.warn("Action object is None")
 
     def __repr__(self):
         return "HostRecord(count={}, status={}, max={})".format(self._count, self._latest_status, self._max_failed)
@@ -104,27 +119,38 @@ class _HostRecord(object):
 class DomainRecord(object):
     _notify = None
 
-    def __init__(self, domain: str, option: Option):
-        # 初始化时，活跃的主机就是配置文件的主机，这里是带端口的如: 128.0.255.2:80
-        _hosts = option.get_attr(domain, "servers")
-        if not _hosts:
-            NoServersConfigError("the domain no servers in config.yml")
+    def __init__(self, notify: AsyncNotify, config: DomainConfig = None):
+        # 坑了好久，传递的是引用类型，不是值类型
+        _servers = config.get_servers().copy()
+        if not _servers:
+            err_msg = """
+            {} no server found! Maybe:
+            1. Get Servers from remote nginx error occurd
+            2. config.yml servers is blank
+            """
+            NoServersConfigError(err_msg.format(config.domain))
         else:
-            self._actives = set(_hosts)
+            self._actives = _servers
         self._inactives = set()
         self._total_server = len(self._actives)
         self._current_errors = set()
-        self._domain = domain
+        self._domain = config.domain
+        self.timeout = config.get("timeout")
         self._record = dict()
-        self._max_failed = int(option.get_attr(domain, "max_failed"))
-        self._max_inactive = int(option.get_attr(domain, "max_inactive"))
-        self._nginxs = option.get_nginxs()
+        self._max_failed = int(config.get("max_failed")) if config.get("max_failed") else MAX_FAILED
+        self._max_inactive = int(config.get("max_inactive")) if config.get("max_inactive") else MAX_FAILED // 2
+        self._nginxs = config.nginxs
         # 通知对象
         if not self._notify:
-            self._notify = option.get_notify()
+            self._notify = notify
 
-    def __repr__(self):
-        return "DomainRecord(domain={}, max_failed={}, {})".format(self._domain, self._max_failed, self._max_inactive)
+    @property
+    def notify(self):
+        return self._notify
+
+    @property
+    def domain(self):
+        return self._domain
 
     # 不主动调用，当调用add_error时触发
     async def _report_error(self, host: str) -> None:
@@ -166,6 +192,7 @@ class DomainRecord(object):
 
     async def calculate(self, check_result: tuple) -> None:
         host, status = check_result
+        # log.logger.debug("income calculate method---------{} {}".format(host, status))
         if (status < 400) and (host not in self._current_errors) and (host not in self._inactives):
             # 说明正常，删除之前记录的对象，节省内存
             try:
@@ -173,29 +200,35 @@ class DomainRecord(object):
             except KeyError:
                 pass
         else:
+            # 异常逻辑
             if (host not in self._inactives) and (host not in self._record):
+                # 这里说明不存在记录，初始化一个HostRecord
                 host_record = _HostRecord(self._domain, host, self._max_failed)
                 action = NginxAction(self._domain, host, nginxs=self._nginxs)
                 host_record.add_action(action)
                 host_record.add_notify(self._notify)
                 self._record.setdefault(host, host_record)
+            else:
+                # 这里是之前有HostRecord记录，要获取之前的记录
+                host_record = self._record.get(host)
+                action = NginxAction(self._domain, host, nginxs=self._nginxs)
+                host_record.add_action(action)
+                host_record.add_notify(self._notify)
             await self._record[host].update(self, status)
+
         if self._record:
-            print("{} Current Error {}".format(self._domain, self._record))
+            log.logger.info("{} Errors {}".format(self._domain, self._record))
 
 
 class AsyncCheck(object):
-    def __init__(self, domain: str, record: DomainRecord, option: Option):
-        self._domain = domain
-        self._notify = option.get_notify()
-        self._config = option.get_config(domain)
+    def __init__(self, record: DomainRecord):
         # DomainRecord还是要从外面传进来，不然每次实例化后记数被重置
         self._record = record
 
     async def _get_status(self, host: str) -> (str, int):
-        _timeout = self._config.get("timeout")
+        _timeout = self._record.timeout
         url = "http://{}".format(host)
-        headers = dict(Host=self._domain)
+        headers = dict(Host=self._record.domain)
         try:
             async with aiohttp.ClientSession(headers=headers) as session:
                 async with session.get(url, timeout=aiohttp.ClientTimeout(total=_timeout)) as resp:
@@ -203,14 +236,14 @@ class AsyncCheck(object):
         except Exception as e:
             if not str(e):
                 e = "Check Coroutine Timeout, It mean HTTP Get Timeout"
-            print(e)
+            log.logger.info(e)
             return host, 504
 
-    async def check_servers(self):
+    async def check_servers(self, servers: list or set):
         """
         如果只返回错误的记录，那如何知道是否恢复了？还是说不管状态如何，它只是返回结果，不做判断
         """
-        tasks = [self._get_status(host) for host in self._config.get("servers")]
+        tasks = [self._get_status(host) for host in servers]
         dones, _ = await asyncio.wait(tasks)
         for done in dones:
             await self._record.calculate(done.result())
@@ -218,10 +251,7 @@ class AsyncCheck(object):
 
 async def main():
     config = AppConfig("")
-    op = Option(config)
-    domain = 'www.aaa.com'
-    x = op.get_attr(domain, "max_inactive")
-    print(x)
+    print(config)
 
 
 if __name__ == '__main__':
