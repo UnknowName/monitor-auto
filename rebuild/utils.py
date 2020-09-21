@@ -149,46 +149,6 @@ class AppConfig(object):
         raise NoDomainError()
 
 
-# TODO 这个类可以不用了，用DomainConfig替代
-"""
-class Option(object):
-    _instance = None
-    _attrs = dict()
-    _notify = None
-
-    def __new__(cls, *args, **kwargs):
-        if not cls._instance:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
-    def __init__(self, app_config: AppConfig):
-        domains = app_config.get_attrs("sites")
-        nginxs = app_config.get_attrs("nginxs")
-        self._attrs["nginxs"] = nginxs
-        for domain_config in domains:
-            domain_name = domain_config.get("site")
-            self._attrs[domain_name] = domain_config
-
-    def add_notify(self, notify: AsyncNotify) -> None:
-        if not self._notify:
-            self._notify = notify
-
-    def get_notify(self) -> AsyncNotify:
-        return self._notify
-
-    def get_nginxs(self) -> list:
-        return self._attrs.get("nginxs", [])
-
-    def get_attr(self, domain: str, key: str) -> str:
-        return self._attrs.get(domain, {}).get(key, "")
-
-    def get_config(self, domain: str) -> DomainConfig:
-        domain_dic = self._attrs.get(domain, {})
-        domain_nginxs = domain_dic.get("nginxs") if domain_dic.get("nginxs") else self.get_nginxs()
-        return DomainConfig(domain_dic, domain_nginxs)
-"""
-
-
 class _BaseActionThread(Thread):
 
     def __init__(self, domain: str, host: str, **kwargs):
@@ -217,7 +177,7 @@ class _BaseActionThread(Thread):
         log.logger.info("Ansible task output:\n{}".format(output))
 
 
-# 通过Ansible下线并重启IIS站点，两个动作合并成一个
+# TODO 有配置文件，如果有传入优先使用它，没有就使用domain构造
 class NginxAction(_BaseActionThread):
     """
     发生错误的动作,从NGINX上下线
@@ -232,7 +192,7 @@ class NginxAction(_BaseActionThread):
       tasks:
       - name: Gateway down host {{ host }}
         lineinfile:
-          path: /etc/nginx/conf.d/{{ domain }}.conf
+          path: {{ config }}
           regexp: '(\s{0,}\bserver\b\s+?\b{{ host }}\b.*)'
           line: '#\1'
           backrefs: yes
@@ -267,7 +227,7 @@ class NginxAction(_BaseActionThread):
       tasks:
       - name: Gateway up host {{ host }}
         lineinfile:
-          path: /etc/nginx/conf.d/{{ domain }}.conf
+          path: {{ config }}
           regexp: '(\s{0,})#(\s{0,}\bserver\b\s+?\b{{ host }}\b.*)'
           line: '\1\2'
           backrefs: yes
@@ -285,36 +245,49 @@ class NginxAction(_BaseActionThread):
     def __repr__(self):
         return "NginxAction({}, {})".format(self._domain, self._host)
 
-    def _create_yaml(self, host: str, domain: str) -> str:
+    def _create_yaml(self, host: str) -> str:
         nginxs = self._kwargs.get("nginxs")
         if self._action_type == 'error':
             task_yaml = self._down_tmpl
         else:
             task_yaml = self._up_tmpl
-        _filename = "{domain}_{host}_{action}.yml".format(domain=domain,
+        _filename = "{domain}_{host}_{action}.yml".format(domain=self._domain,
                                                           host=host.replace(":", "_"),
                                                           action=self._action_type)
         task_file = os.path.join(os.path.pardir, "tasks_yaml", _filename)
+        _config_file = self._get_config()
         with open(task_file, 'w') as f:
-            f.write(jinja2.Template(task_yaml).render(nginxs=nginxs, host=host, domain=domain))
+            f.write(jinja2.Template(task_yaml).render(nginxs=nginxs, host=host, config=_config_file))
             return task_file
+
+    def _get_config(self) -> str:
+        if self._kwargs.get("config_file"):
+            return self._kwargs.get("config_file")
+        else:
+            # 如果没有自定义的config_file，那就构造一个默认的
+            return "/etc/nginx/conf.d/{}.conf".format(self._domain)
 
     def run(self) -> None:
         if not self._action_type:
             raise Exception("Before Run start, Please call set_action_type(name: str)")
-        playbook = self._create_yaml(self._host, self._domain)
+        playbook = self._create_yaml(self._host)
         log.logger.info("execute {} action".format(self._action_type))
         self.execute_action(playbook)
 
 
 if __name__ == '__main__':
-    # nginx_action = NginxAction("dev.siss.io", "128.0.255.10:80", action="down", nginxs=["128.0.255.2", "128.0.255.3"])
-    # nginx_action.start()
+    nginx_action = NginxAction("dev.siss.io",
+                               "128.0.255.10:80",
+                               nginxs=["128.0.255.2", "128.0.255.3"],
+                               config_file="/etc/nginx/conf.d/test.conf"
+                               )
+    nginx_action.set_action_type("error")
+    nginx_action.start()
+    """
     config = AppConfig("")
     domain_configs = config.get_domain_config("www.aaa.com")
     print(domain_configs.get("max_failed"))
     # print(config.get_attrs("sites"))
-    """
     op = Option(config)
     print(op.get_config("www.aaa.com"))
     print(op.get_nginxs())

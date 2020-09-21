@@ -87,7 +87,6 @@ class _HostRecord(object):
     def add_action(self, action: NginxAction) -> None:
         self._action_obj = action
 
-    # TODO 后面要取消这个方法，因为当达到max_failed时，不执行动作，但是要发送通知
     def _is_action(self, name: str) -> bool:
         if name == "error":
             return self._count >= self._max_failed
@@ -140,6 +139,8 @@ class DomainRecord(object):
         self._max_failed = int(config.get("max_failed")) if config.get("max_failed") else MAX_FAILED
         self._max_inactive = int(config.get("max_inactive")) if config.get("max_inactive") else MAX_FAILED // 2
         self._nginxs = config.nginxs
+        self._config = config.get("config_file") if config.get("config_file") else "/etc/nginx/conf.d/{}.conf".format(
+                                                                                                        config.domain)
         # 通知对象
         if not self._notify:
             self._notify = notify
@@ -192,7 +193,6 @@ class DomainRecord(object):
 
     async def calculate(self, check_result: tuple) -> None:
         host, status = check_result
-        # log.logger.debug("income calculate method---------{} {}".format(host, status))
         if (status < 400) and (host not in self._current_errors) and (host not in self._inactives):
             # 说明正常，删除之前记录的对象，节省内存
             try:
@@ -204,14 +204,14 @@ class DomainRecord(object):
             if (host not in self._inactives) and (host not in self._record):
                 # 这里说明不存在记录，初始化一个HostRecord
                 host_record = _HostRecord(self._domain, host, self._max_failed)
-                action = NginxAction(self._domain, host, nginxs=self._nginxs)
+                action = NginxAction(self._domain, host, nginxs=self._nginxs, config_file=self._config)
                 host_record.add_action(action)
                 host_record.add_notify(self._notify)
                 self._record.setdefault(host, host_record)
             else:
                 # 这里是之前有HostRecord记录，要获取之前的记录
                 host_record = self._record.get(host)
-                action = NginxAction(self._domain, host, nginxs=self._nginxs)
+                action = NginxAction(self._domain, host, nginxs=self._nginxs, config_file=self._config)
                 host_record.add_action(action)
                 host_record.add_notify(self._notify)
             await self._record[host].update(self, status)
