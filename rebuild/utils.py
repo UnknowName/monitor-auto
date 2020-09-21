@@ -1,9 +1,8 @@
-import re
 import os
 import logging
 import logging.handlers
 from threading import Thread
-from subprocess import run, PIPE, STDOUT
+from subprocess import run, PIPE, STDOUT, TimeoutExpired
 
 import yaml
 import jinja2
@@ -64,15 +63,14 @@ class _RemoteNGINX(object):
             std = run(_command, shell=True, timeout=5, stdout=PIPE, stderr=PIPE)
             stdout = std.stdout.decode("utf8", errors="ignore")
             if std.returncode and std.stderr:
-                err_msg = """
-                Run command {} error! output is:
-                {}
-                """
-                err_output = std.stderr.decode("utf8", errors="ignore").split("\r\n")[-1]
-                CommandError(err_msg.format(_command, self.host, err_output))
-        except Exception as e:
-            stdout = str(e)
-            log.logger.warning("Command output is {}".format(stdout))
+                err_output = std.stderr.decode("utf8", errors="ignore")
+                log.logger.warning("Command output is {}".format(err_output))
+                CommandError(err_output)
+        except CommandError:
+            stdout = ""
+        except TimeoutExpired:
+            stdout = ""
+            log.logger.warning("Get servers from NGINX timeout")
         return stdout
 
     def get_servers(self, config_file: str, backend_port: int) -> set:
