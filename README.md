@@ -1,9 +1,17 @@
-# 监控站点
+# `IIS` Auto Recover  
 
  基于`Ansible`实现尝试自动修复。
  
- 如果一分钟之内检测的站点后端`HTTP`响应状态码为`5XX`，并达到7次。首次将通过`Ansible`执行回收操作。
- 如果回收过后，三分钟之内仍然不见效。将执行从`NGINX`中摘除操作
+ 如果在一分钟之内检测的站点后端`HTTP`响应状态码为`5XX`或者响应超时，并累计达到指定次数。将自动执从`NGINX`中下线主机，
+ 并重启后端`IIS`站点。 
+ 
+ 特性:
+ - `aiohttp`异步检测
+ - 异常自动下线主机并重启后端`IIS`站点
+ - 持续尝试自动重启，两次间隔时间为`100`秒，防止恶性循环
+ - 恢复后自动加入`NGINX`后端负载
+ - 支持多站点部署主机
+ - 事件通知
  
 
 ## 工作流程图
@@ -17,16 +25,24 @@ config.yml
 
 ```yaml
 sites:
-  # 监控的站点名称，该域名会在HTTP检测时，将Host设置为该域名
-  test.aaa.com:
-    # 定义了那些主机运行了该服务，最终的HTTP探测目标
+   - site: www.aaa.com
+    # 检测响应超时时间，秒
+    timeout: 5
+    # 一分钟之内最大允许的异常状态次数,达到后会采取动作
+    max_failed: 5
+    # 最大允许下线的主机，达到该值后，新主机即使异常也不执行任何动作,但会发送通知。
+    # 如果该值和服务器数量一样多，就不执行动作，只发送通知
+    # 未指定时，默认为len(servers) // 2
+    max_inactive: 1
+    # 通过读取NGINX中的配置文件来获取后端Servers，但要求后端端口要一致
+    config_file: /etc/nginx/conf.d/www.aaa.com.conf
+    # 后端upstream的端口
+    backend_port: 80
+    # upstream_file与servers同时存在时，优先读取servers里面的值
     servers:
-    - 192.168.1.10:8080
-    gateway_type: nginx
-
-  test.bbb.com:
-    servers:
-      - 192.168.1.10:8081
+      - 128.0.255.10:9090
+      - 128.0.255.10:5000
+      - 128.0.255.10:9092
     gateway_type: nginx
 
 # 网关服务器，当前仅支持NGINX

@@ -16,6 +16,8 @@ RUN adduser -D -u 120002 -h /opt/app/ app \
     && pipenv install --system --deploy \
     && apk del gcc g++ make libffi-dev openssl-dev \
     && rm -rf /var/cache/apk/*
+# 如果要通过NGINX获取后端Servers，取消注释
+# ADD ./id_rsa /opt/app/.ssh/id_rsa
 RUN chown -R app:app /opt/app \
     && echo -e "StrictHostKeyChecking no\nUserKnownHostsFile /dev/null" >> /etc/ssh/ssh_config \
     && chmod 600 -R /opt/app/.ssh
