@@ -203,11 +203,7 @@ class NginxAction(_BaseActionThread):
       - name: Reload NGINX
         shell: systemctl reload nginx || nginx -s reload
         when: stdout.changed == True
-        
-      - name: Sleep 10 second
-        pause: 
-          seconds: 10
-        
+             
     - hosts:
       - {{ host.split(":")[0] }}
       gather_facts: False
@@ -255,7 +251,9 @@ class NginxAction(_BaseActionThread):
         task_file = os.path.join(os.path.pardir, "tasks_yaml", _filename)
         _config_file = self._get_config()
         with open(task_file, 'w') as f:
-            f.write(jinja2.Template(task_yaml).render(nginxs=nginxs, host=host, config=_config_file))
+            f.write(
+                jinja2.Template(task_yaml).render(nginxs=nginxs, host=host, domain=self._domain, config=_config_file)
+            )
             return task_file
 
     def _get_config(self) -> str:

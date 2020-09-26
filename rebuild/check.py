@@ -8,6 +8,8 @@ from utils import NoServersConfigError
 from utils import AppConfig, NginxAction, DomainConfig, MyLog
 
 MAX_FAILED = 7
+# 5 min
+ACTION_INTERVAL = 60 * 6
 log = MyLog(__name__)
 
 
@@ -28,7 +30,7 @@ class _HostRecord(object):
 
     async def _init(self) -> None:
         self._count = 0
-        self._action_time = time.time() + 100
+        self._action_time = time.time() + ACTION_INTERVAL
         self._action_obj = None
 
     # TODO 未达到最少要求的活跃主机时异常时，发送通知出来，或者说只要主机达到max_failed，就应该发送通知
