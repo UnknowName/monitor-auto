@@ -7,6 +7,7 @@ from notify import AsyncNotify
 log = MyLog(__name__)
 
 
+# TODO 动作执行时加队列！
 async def main():
     app_config = AppConfig("config.yml")
     notify = AsyncNotify(app_config.get_attrs("notify"))

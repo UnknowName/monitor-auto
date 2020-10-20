@@ -10,17 +10,17 @@ import jinja2
 
 class NoServersConfigError(Exception):
     def __init__(self, error: str):
-        raise Exception(error)
+        Exception(error)
 
 
 class NoDomainError(Exception):
     def __init__(self, domain: str):
-        raise Exception("{} no found servers".format(domain))
+        Exception("{} no found servers".format(domain))
 
 
 class CommandError(Exception):
     def __init__(self, error: str):
-        raise Exception(error)
+        Exception(error)
 
 
 class MyLog(object):
@@ -49,7 +49,7 @@ log = MyLog(__name__)
 # 用来获取远端NGINX中的upstream中的主机列表,这个类不要主动引用
 class _RemoteNGINX(object):
     # 不能用单例模式，有可能不同域名的网关是不一样的，那取的数据肯定就有误
-    _remote_fmt = "ssh root@{host} '{command}'"
+    _remote_fmt = """ssh root@{host} '{command}'"""
     _cmd_fmt = r"""sed -rn "s/.*\bserver\b(.*\b:{port}\b).*/\1/p;" {config_file}"""
 
     def __init__(self, host: str):
@@ -57,20 +57,21 @@ class _RemoteNGINX(object):
         self._servers = None
 
     def _execute(self, cmd: str) -> str:
-        # log.logger.info("---fetch servers from remote nginx----")
         _command = self._remote_fmt.format(host=self.host, command=cmd)
         try:
             std = run(_command, shell=True, timeout=5, stdout=PIPE, stderr=PIPE)
             stdout = std.stdout.decode("utf8", errors="ignore")
             if std.returncode and std.stderr:
                 err_output = std.stderr.decode("utf8", errors="ignore")
-                log.logger.warning("Command output is {}".format(err_output))
-                CommandError(err_output)
+                log.logger.warning("Command output is {}**************".format(err_output))
+                raise CommandError(err_output)
+            elif std.returncode == 0 and stdout == "":
+                stdout = "stdout no output"
         except CommandError:
             stdout = ""
         except TimeoutExpired:
             stdout = ""
-            log.logger.warning("Get servers from NGINX timeout")
+            log.logger.error("Execute Remote NGINX Timeout")
         return stdout
 
     def get_servers(self, config_file: str, backend_port: int) -> set:
@@ -83,6 +84,29 @@ class _RemoteNGINX(object):
                 result.add(line.strip())
         self._servers = result
         return result
+
+    def change_server(self, status: str, config_file: str, server: str) -> bool:
+        """
+        :param status: error/ok
+        :param config_file: /etc/nginx/conf.d/test.conf
+        :param server: 128.0.255.27:15672
+        :return:
+        """
+        if status == "ok":
+            _cmd = (r'sed --follow-symlinks -ri '
+                    r'"s/(\s+?)#+?(.*\bserver\b\s+?\b{server}\b.*)/\1\2/g" {conf}'
+                    r'&&nginx -t&&nginx -s reload')
+            command = _cmd.format(server=server, conf=config_file)
+        elif status == "error":
+            _cmd = (r'sed --follow-symlinks -ri '
+                    r'"s/(.*\bserver\b\s+?\b{server}\b.*)/#\1/g" {conf}'
+                    r'&&nginx -t&&nginx -s reload')
+            check_command = r'grep -e ".*#.*\bserver\b.*\b{host}\b.*" {conf}'.format(host=server, conf=config_file)
+            # 先检查当前主机是否已经在下线状态,匹配成功说明已经下线，忽略，未匹配到就执行cmd
+            command = "{check}||({cmd})".format(check=check_command, cmd=_cmd.format(server=server, conf=config_file))
+        else:
+            raise Exception("Only support up or down status")
+        return bool(self._execute(command))
 
 
 # 某个站点的配置对象信息，如www.aaa.com的配置
@@ -144,11 +168,10 @@ class AppConfig(object):
             if _domain.get("site") == domain:
                 return DomainConfig(_domain, self.get_attrs("nginxs"))
         # 如果获取未配置的域名，抛出异常
-        raise NoDomainError()
+        raise NoDomainError(domain)
 
 
 class _BaseActionThread(Thread):
-
     def __init__(self, domain: str, host: str, **kwargs):
         """
         :param domain: "dev.siss.io"
@@ -175,86 +198,30 @@ class _BaseActionThread(Thread):
         log.logger.info("Ansible task output:\n{}".format(output))
 
 
-# TODO 有配置文件，如果有传入优先使用它，没有就使用domain构造
+# TODO AsyncAction 通过asyncio.create_subprocess_exec封装起来
 class NginxAction(_BaseActionThread):
-    """
-    发生错误的动作,从NGINX上下线
-    """
-
-    _down_tmpl = r"""
+    _tmpl = r"""        
     - hosts:
-      {%- for nginx in nginxs %}
-      - {{ nginx }}
-      {% endfor -%}
-      gather_facts: False
-      tasks:
-      - name: Gateway down host {{ host }}
-        lineinfile:
-          path: {{ config }}
-          regexp: '(\s{0,}\bserver\b\s+?\b{{ host }}\b.*)'
-          line: '#\1'
-          backrefs: yes
-        register: stdout
-        
-      - name: Check NGINX Config file
-        shell: nginx -t
-        when: stdout.changed == True
-        
-      - name: Reload NGINX
-        shell: systemctl reload nginx || nginx -s reload
-        when: stdout.changed == True
-             
-    - hosts:
-      - {{ host.split(":")[0] }}
+      - {{ host }}
       gather_facts: False
       tasks:
       - name: Restart IIS Website {{ domain }}
         win_iis_website: name={{ domain }} state=restarted
     """
 
-    _up_tmpl = r"""
-    - hosts:
-      {%- for nginx in nginxs %}
-      - {{ nginx }}
-      {% endfor -%}
-      gather_facts: False
-      tasks:
-      - name: Gateway up host {{ host }}
-        lineinfile:
-          path: {{ config }}
-          regexp: '(\s{0,})#(\s{0,}\bserver\b\s+?\b{{ host }}\b.*)'
-          line: '\1\2'
-          backrefs: yes
-        register: stdout
-        
-      - name: Check NGINX config file
-        shell: nginx -t
-        when: stdout.changed == True
-    
-      - name: Reload NGINX
-        shell: systemctl reload nginx || nginx -s reload
-        when: stdout.changed == True
-    """
-
     def __repr__(self):
         return "NginxAction({}, {})".format(self._domain, self._host)
 
-    def _create_yaml(self, host: str) -> str:
-        nginxs = self._kwargs.get("nginxs")
-        if self._action_type == 'error':
-            task_yaml = self._down_tmpl
-        else:
-            task_yaml = self._up_tmpl
-        _filename = "{domain}_{host}_{action}.yml".format(domain=self._domain,
-                                                          host=host.replace(":", "_"),
-                                                          action=self._action_type)
-        task_file = os.path.join(os.path.pardir, "tasks_yaml", _filename)
-        _config_file = self._get_config()
-        with open(task_file, 'w') as f:
-            f.write(
-                jinja2.Template(task_yaml).render(nginxs=nginxs, host=host, domain=self._domain, config=_config_file)
-            )
-            return task_file
+    # TODO 将名字修改成prepare，并创建_RemoteNGINX实例，并执行服务上/下线动作，后续就可以启动线程了
+    def _prepare(self, status: str) -> bool:
+        """
+        :param status: error/ok
+        :return:
+        """
+        config_file = self._get_config()
+        nginxs = [_RemoteNGINX(nginx) for nginx in self._kwargs.get("nginxs")]
+        results = [nginx.change_server(status, config_file, self._host) for nginx in nginxs]
+        return all(results)
 
     def _get_config(self) -> str:
         if self._kwargs.get("config_file"):
@@ -266,9 +233,18 @@ class NginxAction(_BaseActionThread):
     def run(self) -> None:
         if not self._action_type:
             raise Exception("Before Run start, Please call set_action_type(name: str)")
-        playbook = self._create_yaml(self._host)
         log.logger.info("execute {} action".format(self._action_type))
-        self.execute_action(playbook)
+        if self._prepare(self._action_type):
+            log.logger.info("Execute prepare ok-------------------------")
+        else:
+            log.logger.info("Execute prepare failed---------------------")
+        if self._action_type == 'error':
+            host, port = self._host.split(":")
+            _filename = "{domain}_{host}.yml".format(domain=self._domain, host="{}_{}".format(host, port))
+            task_file = os.path.join(os.path.pardir, "tasks_yaml", _filename)
+            with open(task_file, 'w') as f:
+                f.write(jinja2.Template(self._tmpl).render(host=host, domain=self._domain))
+            self.execute_action(task_file)
 
 
 if __name__ == '__main__':

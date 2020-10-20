@@ -112,11 +112,10 @@ class _HostRecord(object):
             # 如果为空，就需要重新初始化Action对象
             log.logger.warn("Action object is None")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return "HostRecord(count={}, status={}, max={})".format(self._count, self._latest_status, self._max_failed)
 
 
-# TODO 主机异常时，有两种状态，一种状态是下线，一种是异常
 class DomainRecord(object):
     _notify = None
 
@@ -206,16 +205,17 @@ class DomainRecord(object):
             if (host not in self._inactives) and (host not in self._record):
                 # 这里说明不存在记录，初始化一个HostRecord
                 host_record = _HostRecord(self._domain, host, self._max_failed)
-                action = NginxAction(self._domain, host, nginxs=self._nginxs, config_file=self._config)
-                host_record.add_action(action)
-                host_record.add_notify(self._notify)
+                # action = NginxAction(self._domain, host, nginxs=self._nginxs, config_file=self._config)
+                # host_record.add_action(action)
+                # host_record.add_notify(self._notify)
                 self._record.setdefault(host, host_record)
             else:
                 # 这里是之前有HostRecord记录，要获取之前的记录
                 host_record = self._record.get(host)
-                action = NginxAction(self._domain, host, nginxs=self._nginxs, config_file=self._config)
-                host_record.add_action(action)
-                host_record.add_notify(self._notify)
+            # 再设置Action,Notify
+            action = NginxAction(self._domain, host, nginxs=self._nginxs, config_file=self._config)
+            host_record.add_action(action)
+            host_record.add_notify(self._notify)
             await self._record[host].update(self, status)
 
         if self._record:

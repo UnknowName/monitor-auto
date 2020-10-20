@@ -46,4 +46,4 @@ notify:
 #      - user2@domain.com
 
  -  type: dingding
-    robot_token: 01ce5cecb1343bbb6d59550efbca1567c2b08ea8843d966f1c76b309308c25b5
+    robot_token: 201ce5cecb1343bbb6d59550efbca1567c2b08ea8843d966f1c76b309308c25b5
