@@ -2,7 +2,7 @@ FROM python:3.7-alpine
 ENV APP_HOME=/opt/app \
     TZ=Asia/Shanghai \
     PATH=${APP_HOME}/bin:$PATH
-ADD ./rebuild /opt/app/src
+RUN mkdir -p /opt/app/src
 ADD ./Pipfile /opt/app/src
 WORKDIR /opt/app/src
 RUN adduser -D -u 120002 -h /opt/app/ app \
@@ -15,11 +15,12 @@ RUN adduser -D -u 120002 -h /opt/app/ app \
     && pipenv lock \
     && pipenv install --system --deploy \
     && apk del gcc g++ make libffi-dev openssl-dev \
-    && rm -rf /var/cache/apk/*
+    && rm -rf /var/cache/apk/* \
+    && echo -e "StrictHostKeyChecking no\nUserKnownHostsFile /dev/null" >> /etc/ssh/ssh_config
+ADD ./src /opt/app/src
 # 如果要通过NGINX获取后端Servers，取消注释
-# ADD ./id_rsa /opt/app/.ssh/id_rsa
+ADD ./id_rsa /opt/app/.ssh/id_rsa
 RUN chown -R app:app /opt/app \
-    && echo -e "StrictHostKeyChecking no\nUserKnownHostsFile /dev/null" >> /etc/ssh/ssh_config \
-    && chmod 600 -R /opt/app/.ssh
+    && chmod 600 /opt/app/.ssh/*
 USER app
-CMD ["python", "-u", "main.py"]
+CMD ["python", "-u", "iis_recover.py"]

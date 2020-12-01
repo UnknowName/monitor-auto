@@ -1,21 +1,73 @@
 sites:
   - site: www.aaa.com
-    timeout: 2
-    servers:
-    - 128.0.255.10:9090
-    - 128.0.255.25:80
-    - 128.0.255.25:8090
+    # 是否尝试自动恢复，重启站点,默认为False
+    auto_recover: True
+    # 尝试自动恢复的动作间隔，默认300秒
+    auto_inter: 300
+    # 检查超时,默认为5秒
+    timeout: 5
+    # HTTP检查路径，如不指定，默认为/
+    path: /
+    # 一分钟之内最大允许的异常状态次数,达到后会采取动作
+    max_failed: 5
+    # 最大允许下线的主机，达到该值后，新主机即使异常也不执行任何动作,只发送异常通知
+    max_inactive: 1
+    # 仅支持阿里云的SLB与NGINX
     gateway_type: nginx
+    # 通过读取NGINX中的配置文件来获取后端Servers，但要求后端端口要一致
+    config_file: /etc/nginx/conf.d/www.aaa.com.conf
+    # 当使用NGINX获取后端时，backend_port必须配置
+    backend_port: 80
+    # servers同时存在时，优先级最高，不会从网关或SLB中读取后端信息
+    servers:
+      - 128.0.255.10:9090
+      - 128.0.255.10:9095
+      - 128.0.255.10:9093
+    # gateway_type: slb
+    # listen_port: 443
+    # slb_id: xxxxx
 
   - site: test.bbb.com
-    timeout: 2
-    servers:
-      - 128.0.255.30:80
+    auto_recover: True
+    max_failed: 7
+    timeout: 5
+    # 不要 >= len(servers)!
+    max_inactive: 1
+    # servers:
+    #  - 128.0.255.30:80
     gateway_type: nginx
+    config_file: /etc/nginx/conf.d/www.aaa.com.conf
+    backend_port: 80
+    servers:
+      - 128.0.100.171:90
+      - 128.0.100.178:80
+
+  - site: test.aaa.com
+    max_failed: 7
+    timeout: 5
+    max_inactive: 1
+    gateway_type: slb
+    listen_port: 80
+    slb_id: 1100000222
 
 nginxs:
   - 128.0.255.10
   - 128.0.100.170
+
+gateway:
+  nginx:
+    user: username
+    # 暂不支持密码，未使用pam模块
+    # password: password
+    hosts:
+    # 如果两台是一样，一台就可以，如果多台不一样，取合集
+    - 128.0.255.10
+    - 128.0.255.11
+
+  slb:
+    key: key
+    secret: secret
+    region: cn-hz
 
 notify:
 #  wechat:
@@ -34,4 +86,4 @@ notify:
 #      - user2@domain.com
 
  -  type: dingding
-    robot_token: bcd1ea37b19b1304227b9af2f4c6ad1cde4f4e4c305288ee533bd98331156038
+    robot_token: 201ce5cecb1343bbb6d59550efbca1567c2b08ea8843d966f1c76b309308c25b5

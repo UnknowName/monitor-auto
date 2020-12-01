@@ -1,17 +1,28 @@
 import os
-import time
-import pickle
 import logging
 import logging.handlers
-from email.mime.text import MIMEText
+from threading import Thread
+from subprocess import run, PIPE, STDOUT, TimeoutExpired
 
-import yaml
-import aiohttp
-import aiosmtplib
-import aiosmtplib.auth
+import jinja2
 
 
-class Log(object):
+class NoServersConfigError(Exception):
+    def __init__(self, error: str):
+        Exception(error)
+
+
+class NoDomainError(Exception):
+    def __init__(self, domain: str):
+        Exception("{} no found servers".format(domain))
+
+
+class CommandError(Exception):
+    def __init__(self, error: str):
+        Exception(error)
+
+
+class MyLog(object):
     """Custer Define Logger"""
     fmt = logging.Formatter(
         '%(asctime)s %(module)s %(threadName)s %(levelname)s %(message)s'
@@ -30,171 +41,193 @@ class Log(object):
             fh.setFormatter(self.fmt)
             self.logger.addHandler(fh)
 
-    def get_loger(self):
-        return self.logger
+
+log = MyLog(__name__)
 
 
-class _AsyncWechat(object):
-    token_fmt = 'https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid={corp_id}&corpsecret={secret}'
-    send_fmt = 'https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token={token}'
+# 用来获取远端NGINX中的upstream中的主机列表,这个类不要主动引用
+class _RemoteNGINX(object):
+    # 不能用单例模式，有可能不同域名的网关是不一样的，那取的数据肯定就有误
+    _remote_fmt = """ssh root@{host} '{command}'"""
+    _cmd_fmt = r"""sed -rn "s/.*\bserver\b(.*\b:{port}\b).*/\1/p;" {config_file}"""
 
-    def __init__(self, corp_id: str, secret: str):
-        self.token_url = self.token_fmt.format(corp_id=corp_id, secret=secret)
+    def __init__(self, host: str):
+        self.host = host
+        self._servers = None
 
-    @property
-    async def _fetch_token(self):
-        async with aiohttp.request("GET", self.token_url) as resp:
-            json_data = await resp.json()
-            if json_data.get("errcode", 1):
-                print(json_data.get("errmsg"))
-            else:
-                return json_data.get("access_token")
+    def _execute(self, cmd: str) -> str:
+        _command = self._remote_fmt.format(host=self.host, command=cmd)
+        try:
+            std = run(_command, shell=True, timeout=5, stdout=PIPE, stderr=PIPE)
+            stdout = std.stdout.decode("utf8", errors="ignore")
+            if std.returncode and std.stderr:
+                err_output = std.stderr.decode("utf8", errors="ignore")
+                log.logger.warning("Command output is {}**************".format(err_output))
+                raise CommandError(err_output)
+            elif std.returncode == 0 and stdout == "":
+                stdout = ""
+        except CommandError:
+            stdout = ""
+        except TimeoutExpired:
+            stdout = ""
+            log.logger.error("Execute Remote NGINX Timeout")
+        return stdout
+
+    def get_servers(self, config_file: str, backend_port: int) -> set:
+        if self._servers:
+            return self._servers
+        result = set()
+        command = self._cmd_fmt.format(port=backend_port, config_file=config_file)
+        for line in self._execute(command).split("\n"):
+            if line:
+                result.add(line.strip())
+        self._servers = result
+        return result
+
+    def change_server(self, status: str, config_file: str, server: str) -> bool:
+        """
+        :param status: error/ok
+        :param config_file: /etc/nginx/conf.d/test.conf
+        :param server: 128.0.255.27:15672
+        :return:
+        """
+        if status == "ok":
+            _cmd = (r'sed --follow-symlinks -ri '
+                    r'"s/(\s+?)#+?(.*\bserver\b\s+?\b{server}\b.*)/\1\2/g" {conf}'
+                    r'&&nginx -t&&nginx -s reload')
+            command = _cmd.format(server=server, conf=config_file)
+        elif status == "error":
+            _cmd = (r'sed --follow-symlinks -ri '
+                    r'"s/(.*\bserver\b\s+?\b{server}\b.*)/#\1/g" {conf}'
+                    r'&&nginx -t&&nginx -s reload')
+            check_command = r'grep -e ".*#.*\bserver\b.*\b{host}\b.*" {conf}'.format(host=server, conf=config_file)
+            # 先检查当前主机是否已经在下线状态,匹配成功说明已经下线，忽略，未匹配到就执行cmd
+            command = "{check}||({cmd})".format(check=check_command, cmd=_cmd.format(server=server, conf=config_file))
+        else:
+            raise Exception("Only support up or down status")
+        return bool(self._execute(command))
+
+
+class __BaseActionThread(Thread):
+    def __init__(self, domain: str, host: str, **kwargs):
+        """
+        :param domain: "dev.siss.io"
+        :param host: "128.0.255.27:80"
+        """
+        Thread.__init__(self)
+        self._host = host
+        self._domain = domain
+        self._kwargs = kwargs
+        self._observe = None
+        self._action_type = "ok"
+
+    def set_action_type(self, name: str):
+        if name in ["error", "ok"]:
+            self._action_type = name
+        else:
+            raise Exception("Action type only error or ok")
 
     @staticmethod
-    async def _cache_token(token: str) -> bool:
-        expiry_time = time.time() + (2 * 60 * 60)
-        cache_dic = dict(token=token, expiry_time=expiry_time)
-        with open('token.cache', 'wb') as f:
-            pickle.dump(cache_dic, f)
-            return True
+    def execute_action(playbook: str) -> None:
+        cmd = "ansible-playbook {}".format(playbook)
+        stdout = run(cmd, shell=True, stdout=PIPE, stderr=STDOUT).stdout
+        output = stdout.decode("utf8", errors="ignore")
+        log.logger.info("Ansible task output:\n{}".format(output))
 
-    async def get_token(self) -> str:
-        if os.path.exists('token.cache'):
-            with open('token.cache', 'rb') as f:
-                token_dic = pickle.load(f)
-                if token_dic.get("expiry_time", time.time()) < time.time():
-                    token = await self._fetch_token
-                    await self._cache_token(token=token)
-                    return token
-                else:
-                    return token_dic.get("token")
+
+# TODO AsyncAction 通过asyncio.create_subprocess_exec封装起来
+class NginxAction(__BaseActionThread):
+    _tmpl = r"""        
+    - hosts:
+      - {{ host }}
+      gather_facts: False
+      tasks:
+      - name: Restart IIS Website {{ domain }}
+        win_iis_website: name={{ domain }} state=restarted
+    """
+
+    def __repr__(self):
+        return "NginxAction({}, {})".format(self._domain, self._host)
+
+    # TODO 将名字修改成prepare，并创建_RemoteNGINX实例，并执行服务上/下线动作，后续就可以启动线程了
+    def _prepare(self, status: str) -> bool:
+        """
+        :param status: error/ok
+        :return:
+        """
+        config_file = self._get_config()
+        nginxs = [_RemoteNGINX(nginx) for nginx in self._kwargs.get("nginxs")]
+        results = [nginx.change_server(status, config_file, self._host) for nginx in nginxs]
+        return all(results)
+
+    def _get_config(self) -> str:
+        if self._kwargs.get("config_file"):
+            return self._kwargs.get("config_file")
         else:
-            token = await self._fetch_token
-            if token:
-                await self._cache_token(token)
-                return token
+            # 如果没有自定义的config_file，那就构造一个默认的
+            return "/etc/nginx/conf.d/{}.conf".format(self._domain)
 
-    async def send_msg(self, to_user: list, msg: str) -> str:
-        msg_data = dict(
-            touser='|'.join(to_user),
-            msgtype='text', agentid=0,
-            text=dict(content=msg)
-        )
-        token = await self.get_token()
-        if not token:
-            return ""
-        try:
-            async with aiohttp.request("POST", self.send_fmt.format(token=token), json=msg_data) as resp:
-                return await resp.json()
-        except Exception as e:
-            print(e)
-            return ""
+    def run(self) -> None:
+        if not self._action_type:
+            raise Exception("Before Run start, Please call set_action_type(name: str)")
+        log.logger.info("execute {} action".format(self._action_type))
+        if self._prepare(self._action_type):
+            log.logger.info("Execute prepare ok-------------------------")
+        else:
+            log.logger.info("Execute prepare failed---------------------")
+        if self._action_type == 'error':
+            host, port = self._host.split(":")
+            _filename = "{domain}_{host}.yml".format(domain=self._domain, host="{}_{}".format(host, port))
+            task_file = os.path.join(os.path.pardir, "tasks_yaml", _filename)
+            with open(task_file, 'w') as f:
+                f.write(jinja2.Template(self._tmpl).render(host=host, domain=self._domain))
+            self.execute_action(task_file)
 
 
-class _AsyncDDing(object):
-    _send_fmt = "https://oapi.dingtalk.com/robot/send?access_token={token}"
+# 不要主动调用
+class _RestartIISAction(__BaseActionThread):
+    _tmpl = r"""        
+        - hosts:
+          - {{ host }}
+          gather_facts: False
+          tasks:
+          - name: Restart IIS Website {{ domain }}
+            win_iis_website: name={{ domain }} state=restarted
+        """
 
-    def __init__(self, token: str) -> None:
-        self.send_api = self._send_fmt.format(token=token)
+    def __init__(self, site: str, host: str):
+        Thread.__init__(self)
+        self._host, self._port = host.split(":")
+        self._site = site
 
-    async def send_msg(self, msg: str) -> str:
-        msgs = {
-            'msgtype': 'text',
-            'text': {
-                'content': msg
-            }
-        }
-        async with aiohttp.request('POST', self.send_api, json=msgs) as resp:
-            return await resp.json()
+    def __repr__(self):
+        return "RestartIISAction(site={}, host={})".format(self._site, self._host)
 
-
-class _AsyncEmail(object):
-    def __init__(self, server: str, port: int, username: str, password: str):
-        self.server = server
-        self.port = port if port else 25
-        self.username = username
-        self.password = password
-        self._smtp = aiosmtplib.SMTP(hostname=server, port=port)
-
-    async def send_msg(self, users: list, msg: str):
-        message = MIMEText(msg)
-        message['From'] = self.username
-        message['To'] = ';'.join(users)
-        message["Subject"] = msg
-        async with self._smtp as smtp:
-            await smtp.login(self.username, self.password)
-            await smtp.send_message(message)
+    def run(self):
+        _filename = "{}_{}_{}.yml".format(self._site, self._host, self._port)
+        task_file = os.path.join(os.path.pardir, "tasks_yaml", _filename)
+        with open(task_file, 'w') as f:
+            f.write(jinja2.Template(self._tmpl).render(host=self._host, domain=self._site))
+        self.execute_action(task_file)
 
 
-class AsyncNotify(object):
-    def __init__(self, configs: list) -> None:
-        self.configs = configs
-
-    async def send_msgs(self, msg: str) -> None:
-        for _config in self.configs:
-            _notify_name = _config.get("type", "")
-            if _notify_name == "dingding":
-                _token = _config.get("robot_token")
-                _dding = _AsyncDDing(_token)
-                notify_coroutine = _dding.send_msg(msg)
-            elif _notify_name == "wechat":
-                _corpid = _config.get('corpid')
-                _secret = _config.get('secret')
-                _users = _config.get("users")
-                _wx = _AsyncWechat(_corpid, _secret)
-                notify_coroutine = _wx.send_msg(_users, msg)
-            elif _notify_name == 'email':
-                _server = _config.get('server')
-                _username = _config.get('username')
-                _password = _config.get('password')
-                _port = _config.get('port', 25)
-                _users = _config.get("users")
-                _em = _AsyncEmail(_server, _port, _username, _password)
-                notify_coroutine = _em.send_msg(_users, msg)
-            else:
-                continue
-            await notify_coroutine
-
-
-class AppConfig(object):
-    def __init__(self, config_path: str = "") -> None:
-        config_path = config_path if config_path else "config.yml"
-        with open(config_path) as f:
-            self._data = yaml.safe_load(f)
-
-    def get_attrs(self, attr: str) -> list:
-        return self._data.get(attr, [])
-
-
-class Counter(dict):
-    """继承dict，因为特殊的数据结构，增加一个计数方法"""
-
-    @property
-    def count(self):
-        _count = 0
-        for v in self.values():
-            _count += len(v)
-        return _count
-
-
-if __name__ == "__main__":
-    import asyncio
-    loop = asyncio.get_event_loop()
-    config = AppConfig()
-    n = AsyncNotify(config.get_attrs("notify"))
-    loop.run_until_complete(n.send_msgs("testinfo"))
-    em = _AsyncEmail(server="smtp.sina.com", port=25, username="username@sina.com", password="password")
-    loop.run_until_complete(em.send_msg(['user1@qq.com', 'username@sina.com'], "test"))
-    loop.close()
-    # {'www.aaa.com': {'128.0.255.25:8090', '128.0.255.10:9090'}, 'test.bbb.com': {'128.0.255.30:80'}}
-    # { '172.18.203.241': {},
-    #   '172.18.203.244': {},
-    #   '172.18.203.243': {},
-    #   '172.18.0.212': {'shopapi.sissyun.com.cn': {'count': 5, 'err_time': 1584413186.5710473}},
-    #   '172.18.0.213': {'shopapi.sissyun.com.cn': {'count': 2, 'err_time': 1584413186.571407}},
-    #   '172.18.0.216': {'shopapi.sissyun.com.cn': {'count': 2, 'err_time': 1584413186.571663}},
-    # }
-    c = Counter()
-    c["www.aaa.com"] = {'128.0.255.25:8090', '128.0.255.10:9090'}
-    c['test.bbb.com'] = {'128.0.255.30:80'}
-    print(c.count)
+if __name__ == '__main__':
+    nginx_action = NginxAction("dev.siss.io",
+                               "128.0.255.10:80",
+                               nginxs=["128.0.255.2", "128.0.255.3"],
+                               config_file="/etc/nginx/conf.d/test.conf"
+                               )
+    nginx_action.set_action_type("error")
+    nginx_action.start()
+    """
+    config = AppConfig("")
+    domain_configs = config.get_domain_config("www.aaa.com")
+    print(domain_configs.get("max_failed"))
+    # print(config.get_attrs("sites"))
+    op = Option(config)
+    print(op.get_config("www.aaa.com"))
+    print(op.get_nginxs())
+    nginx = _RemoteNGINX("128.0.255.10")
+    servers = nginx.get_servers("/etc/nginx.conf", 80)
+    print(servers)
+    """
