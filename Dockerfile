@@ -18,9 +18,13 @@ RUN adduser -D -u 120002 -h /opt/app/ app \
     && rm -rf /var/cache/apk/* \
     && echo -e "StrictHostKeyChecking no\nUserKnownHostsFile /dev/null" >> /etc/ssh/ssh_config
 ADD ./src /opt/app/src
+# 使用v2
+# ADD ./v2 /opt/app/src
 # 如果要通过NGINX获取后端Servers，取消注释
 ADD ./id_rsa /opt/app/.ssh/id_rsa
 RUN chown -R app:app /opt/app \
     && chmod 600 /opt/app/.ssh/*
 USER app
 CMD ["python", "-u", "iis_recover.py"]
+# 使用v2
+CMD ["python", "-u", "main.py"]
