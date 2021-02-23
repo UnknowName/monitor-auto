@@ -140,19 +140,20 @@ async def main():
                     await notify.send_msgs(
                         msg_fmt.format(
                             time=get_time(), site=site.name, hosts=hosts,
-                            info="{} Error Occur".format(host), total=len(error_hosts)
+                            info=f"{host} Error Occur", total=len(error_hosts)
                         )
                     )
                 elif _action_type == "online":
                     if site.auto.enable:
-                        log.info("通过网关{}对主机{}进行上线".format(site.gateway_type, host))
+                        log.info(f"通过网关{site.gateway_type}对主机{host}进行上线")
                         site.gateway.change_server_online(host, **site.gateway_kwargs)
-                        await notify.send_msgs(
-                            msg_fmt.format(
-                                time=get_time(), site=site.name, hosts=hosts,
-                                info="{} Recover".format(host), total=len(error_hosts)
-                            )
+                    # 恢复后发送信息
+                    await notify.send_msgs(
+                        msg_fmt.format(
+                            time=get_time(), site=site.name, hosts=hosts,
+                            info=f"{host} Recover", total=len(error_hosts)
                         )
+                    )
             # 主机上/下线，重启站点动作在这里完成，避免SiteConfig对象到处传
         time.sleep(1)
 
