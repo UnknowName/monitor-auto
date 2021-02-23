@@ -129,12 +129,14 @@ async def main():
                         action = ActionFactory.create_action(site.auto.type, host, name=site.auto.name)
                         log.info("启动Action线程....")
                         action.start()
-                        await notify.send_msgs(
-                            msg_fmt.format(
-                                time=get_time(), site=site.name, hosts=hosts,
-                                info=site.auto.type, total=len(error_hosts)
-                            )
+                    if not site.auto.enable:
+                        site.auto.type = "error occur"
+                    await notify.send_msgs(
+                        msg_fmt.format(
+                            time=get_time(), site=site.name, hosts=hosts,
+                            info=site.auto.type, total=len(error_hosts)
                         )
+                    )
                 elif _action_type == "notify":
                     log.info("发送主机{}异常通知信息".format(host))
                     await notify.send_msgs(
