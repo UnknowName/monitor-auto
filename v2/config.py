@@ -8,6 +8,9 @@ from gateway import _NGINXGateway, _SLBGateway
 from base import _Single, SimpleLog, ConfigError, _SLBConfig, _NGINXConfig
 
 CONFIG_FILE = "config.yml"
+DEFAULT_TIMEOUT = 5
+DEFAULT_MAX_FAILED = 7
+DEFAULT_INTER = 300
 log = SimpleLog(__name__).log
 
 
@@ -30,12 +33,12 @@ class _SiteConfig(AbstractSiteConfig):
         if not isinstance(auto_data, dict):
             raise ConfigError("{}的auto_recover配置有误!".format(self.name))
         self.auto = _AutoRecoverConfig(auto_data)
-        self.max_failed = data.get("max_failed", 7)
-        self._timeout = data.get("timeout", 5)
+        self.max_failed = data.get("max_failed") if data.get("max_failed") else DEFAULT_MAX_FAILED
+        self._timeout = data.get("timeout") if data.get("timeout") else DEFAULT_TIMEOUT
         self.max_inactive = data.get("max_inactive", None)
         self._servers = set(data.get("servers", {}))
         self._path = data.get("path", "/")
-        self.auto_inter = data.get("auto_inter", 300)
+        self.auto_inter = data.get("auto_inter") if data.get("auto_inter") else DEFAULT_INTER
         self._gateway = None
         self._fetch = False
         self._gateway_kwargs = None
@@ -135,4 +138,4 @@ class AppConfig(_Single):
 if __name__ == '__main__':
     conf = AppConfig()
     for site in conf.sites:
-        print(site.auto)
+        print(site.max_failed)
