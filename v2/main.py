@@ -2,30 +2,56 @@ import time
 import asyncio
 from typing import List, Tuple, Dict, Set
 
-from base import SimpleLog
-from config import AppConfig, _SiteConfig
-from objects import _HostRecord, AsyncCheck, ActionFactory
+import aiohttp
+
+from action import ActionFactory
+from utils import SimpleLog, HostRecord
+from config import AppConfig, SiteConfig
+
 
 log = SimpleLog(__name__).log
-conf = AppConfig()
+conf = AppConfig("config.yml")
 
 
 def get_time() -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S")
 
 
+class AsyncCheck(object):
+    @staticmethod
+    async def _get_status(hostname: str, host: str, path: str, timeout: int) -> Tuple[int, str]:
+        url = "http://{}{}".format(host, path)
+        headers = dict(Host=hostname)
+        try:
+            async with aiohttp.ClientSession(headers=headers, timeout=aiohttp.ClientTimeout(total=timeout)) as session:
+                async with session.get(url) as resp:
+                    return resp.status, host
+        except Exception as e:
+            if not str(e):
+                e = "Check Coroutine Timeout, It mean HTTP Get Timeout"
+            log.warning(e)
+            return 504, host
+
+    async def checks(self, hostname: str, path: str, servers: Set[str], timeout: int) -> List[Tuple[int, str]]:
+        _tasks = [self._get_status(hostname, _host, path, timeout) for _host in servers]
+        _dones, _ = await asyncio.wait(_tasks)
+        results = [_done.result() for _done in _dones]
+        return results
+
+
 class SiteRecord(object):
-    def __init__(self, _site: _SiteConfig):
+    def __init__(self, _site: SiteConfig):
+        self.conf = _site
         self.name = _site.name
         self.max_failed = _site.max_failed
-        self.auto_inter = _site.auto_inter
+        self.auto_inter = _site.auto_interval
         self.max_inactive = _site.max_inactive
         if not self.max_inactive:
             self.max_inactive = len(_site.servers) // 2
         # 已经下线的主机存入self._inactive
         self._inactive = set()
         # self._record有所有曾经异常的记录
-        self._record: Dict[str:_HostRecord] = dict()
+        self._record: Dict[str: HostRecord] = dict()
 
     def __repr__(self) -> str:
         return "SiteRecord(name={},errors={})".format(self.name, self._record)
@@ -49,7 +75,7 @@ class SiteRecord(object):
                             self._record[host].update(0)
                 else:
                     # 初次，之前未记录
-                    self._record[host] = _HostRecord()
+                    self._record[host] = HostRecord(self.conf.duration, self.conf.auto_interval)
             else:
                 # 状态码是正常的情况,如果存在，那就一直减少到0
                 if host in self._record and self._record[host].count > 0:
@@ -107,7 +133,6 @@ async def main():
     sites = conf.sites
     # 检查结果记录
     records = {site.name: SiteRecord(site) for site in sites}
-    log.info(records)
     while True:
         for site in sites:
             if not site.servers:
@@ -122,23 +147,23 @@ async def main():
             hosts = "\n\t{}".format("\n\t".join(error_hosts))
             for _action_type, host in actions:
                 if _action_type == "offline":
-                    if site.auto.enable:
-                        log.info("使用网关{}对主机{}下线".format(site.gateway_type, host))
-                        site.gateway.change_server_offline(host, **site.gateway_kwargs)
-                        # TODO name这里是作为关键字参数传进去的，如果后期还有其他的动作，这里可能不兼容，要修改
-                        action = ActionFactory.create_action(site.auto.type, host, name=site.auto.name)
+                    if site.recover.enable:
+                        log.info(f"使用网关{site.gateway}对主机{host}下线")
+                        site.gateway.change_server_offline(host)
+                        action = ActionFactory.create_action(site, host)
                         log.info("启动Action线程....")
                         action.start()
-                    if not site.auto.enable:
-                        site.auto.type = "error occur"
+                    if not site.recover.enable:
+                        site.recover.type = "error occur"
+                    log.info(f"发送{host}异常通知信息")
                     await notify.send_msgs(
                         msg_fmt.format(
                             time=get_time(), site=site.name, hosts=hosts,
-                            info=site.auto.type, total=len(error_hosts)
+                            info=site.recover.type, total=len(error_hosts)
                         )
                     )
                 elif _action_type == "notify":
-                    log.info("发送主机{}异常通知信息".format(host))
+                    log.info(f"发送主机{host}异常通知信息")
                     await notify.send_msgs(
                         msg_fmt.format(
                             time=get_time(), site=site.name, hosts=hosts,
@@ -146,9 +171,9 @@ async def main():
                         )
                     )
                 elif _action_type == "online":
-                    if site.auto.enable:
-                        log.info(f"通过网关{site.gateway_type}对主机{host}进行上线")
-                        site.gateway.change_server_online(host, **site.gateway_kwargs)
+                    if site.recover.enable:
+                        log.info(f"通过网关{site.gateway}对主机{host}进行上线")
+                        site.gateway.change_server_online(host)
                     # 恢复后发送信息
                     await notify.send_msgs(
                         msg_fmt.format(
@@ -157,7 +182,7 @@ async def main():
                         )
                     )
             # 主机上/下线，重启站点动作在这里完成，避免SiteConfig对象到处传
-        time.sleep(1)
+        time.sleep(conf.check_interval)
 
 
 if __name__ == '__main__':

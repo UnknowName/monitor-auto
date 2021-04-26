@@ -1,6 +1,6 @@
 monitor:
-  image: iis-recover
-  container_name: iis-recover
+  image: monitor-auto
+  container_name: monitor-auto
   net: host
   environment:
     - TZ=Asia/Shanghai

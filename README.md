@@ -24,62 +24,50 @@
 config.yml
 
 ```yaml
+default:
+  # 60秒内累计7次
+  duration: 60
+  timeout: 5
+  max_failed: 5
+  path: /
+  # 自动干预间隔时间，防止恶性循环
+  auto_interval: 200
+  max_inactive: 1
+  recover: False
+  check_interval: 1
+
 sites:
   - site: www.aaa.com
-    # 是否尝试自动恢复，重启站点,默认为False
-    auto_recover: True
-    # 尝试自动恢复的动作间隔，默认300秒
-    auto_inter: 300
-    # 检查超时,默认为5秒
-    timeout: 5
-    # HTTP检查路径，如不指定，默认为/
-    path: /
-    # 一分钟之内最大允许的异常状态次数,达到后会采取动作
-    max_failed: 5
-    # 最大允许下线的主机，达到该值后，新主机即使异常也不执行任何动作,只发送异常通知。
-    # 如果不指定，则取len(servers) // 2
-    max_inactive: 1
-    # 通过读取NGINX中的配置文件来获取后端Servers，但要求后端端口要一致
-    gateway_type: nginx
-    config_file: /etc/nginx/conf.d/www.aaa.com.conf
-    # 当使用NGINX获取后端时，backend_port必须配置
-    backend_port: 80
-    # servers同时存在时，优先级最高，不会从网关或SLB中读取后端信息
-    servers:
-      - 128.0.255.10:9090
-      - 128.0.255.10:9095
-      - 128.0.255.10:9093
-    # 仅支持阿里云的SLB与NGINX
-    # gateway_type: slb
-    # listen_port: 443
-    # slb_id: xxxxx
+    # 具体怎么Recover不管，要具体实现一个AbstractRecoverAction
+    recover:
+      enable: True
+      # 类型，暂支持restart_process与restart_website
+      type: restart_process
+      name: httpd.exe
+    gateway:
+      type: nginx
+      upstream_port: 9090
+      config_file: /etc/nginx/conf.d/www.aaa.com.conf
 
   - site: test.bbb.com
-    auto_recover: True
-    max_failed: 7
-    timeout: 5
-    # 不要 >= len(servers)!
-    max_inactive: 1
-    # servers:
-    #  - 128.0.255.30:80
-    gateway_type: nginx
-    config_file: /etc/nginx/conf.d/www.aaa.com.conf
-    backend_port: 80
-    servers:
-      - 128.0.100.171:90
+    max_failed: 12
+    timeout: 3
+    gateway:
+      type: static
+      servers:
+      - 128.0.100.171:80
       - 128.0.100.178:80
 
   - site: test.aaa.com
-    max_failed: 7
-    timeout: 5
-    max_inactive: 1
-    gateway_type: slb
-    listen_port: 80
-    slb_id: 1100000222
+    gateway:
+      type: slb
+      id: 1100000222
+      # 前端监听的端口
+      port: 80
 
 gateway:
   nginx:
-    user: username
+    user: root
     # 暂不支持密码，未使用pam模块
     # password: password
     hosts:
@@ -93,37 +81,29 @@ gateway:
     region: cn-hz
 
 notify:
-#  wechat:
-#    corpid: wechat-corpid
-#    secret: wechat-secret
-#    users:
-#      - tkggvfhpce2
-#      - user2
+  - type: dingding
+    token: 201ce5cecb1343bbb6d59550efbca1567c2b08ea8843d966f1c76b309308c25b5
 
-#  email:
-#    server: smtp.domain.com
-#    username: username
-#    password: password
-#    users:
-#      - username@domain.com
-#      - user2@domain.com
-
- -  type: dingding
-    robot_token: 201ce5cecb1343bbb6d59550efbca1567c2b08ea8843d966f1c76b309308c25b5
+  - type: wechat
+    secret: secret
+    corp_id: asekey
+    users:
+      - user1
+      - user2
 ```
 
 ### 编译镜像
 
 ```bash
 cd ProjectDir
-docker build -t monitor .
+docker build -t monitor-auto .
 ```
 
 ###  docker-compose.yml
 ```yaml
 monitor:
-    image: monitor
-    container_name: monitor
+    image: monitor-auto
+    container_name: monitor-auto
     net: host
     restart: always
     volumes:
@@ -154,3 +134,7 @@ ansible_winrm_server_cert_validation=ignore
 ```
 
 如果需要部分自动执行，另一些不自动，可以将`Ansible`的主机清单文件中，不想自动干预的主机注释
+
+# TODO
+
+- 阿里云`SLB`网关类型支持代码实现

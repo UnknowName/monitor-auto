@@ -1,10 +1,51 @@
 from typing import Set
+from abc import ABCMeta, abstractmethod
 from subprocess import run, PIPE, TimeoutExpired
 
-from models import AbstractGateway
-from base import _NGINXConfig, _SLBConfig, SimpleLog, CommandError, NoSupportGatewayError
+from utils import _Single, SimpleLog
 
 log = SimpleLog(__name__).log
+
+
+class AbstractGateway(metaclass=ABCMeta):
+    @abstractmethod
+    def get_servers(self) -> Set[str]:
+        pass
+
+    @abstractmethod
+    def change_server_online(self, server: str):
+        pass
+
+    @abstractmethod
+    def change_server_offline(self, server: str):
+        pass
+
+
+class AbstractGatewayFactory(metaclass=ABCMeta):
+    @staticmethod
+    def get_gateway(site_conf_data: dict, gateway_data: dict) -> AbstractGateway:
+        pass
+
+
+class StaticGateway(AbstractGateway):
+    def __init__(self, data: dict):
+        self.type = data.get("type")
+        self._servers = set(data.get("servers", []))
+        assert self._servers and self.type == "static", "Backend Type Error"
+
+    def get_servers(self) -> Set[str]:
+        return self._servers
+
+    def change_server_offline(self, server: str):
+        # print("static backend, nothing to do")
+        pass
+
+    def change_server_online(self, server: str):
+        # print("static backend, nothing to do")
+        pass
+
+    def __repr__(self) -> str:
+        return f"StaticGateway(servers={self._servers})"
 
 
 class _RemoteNGINX(object):
@@ -51,12 +92,12 @@ class _RemoteNGINX(object):
         :param server: 128.0.255.27:15672
         :return:
         """
-        if status == "ok":
+        if status == "up":
             _cmd = (r'sed --follow-symlinks -ri '
                     r'"s/(\s+?)#+?(.*\bserver\b\s+?\b{server}\b.*)/\1\2/g" {conf}'
                     r'&&nginx -t&&nginx -s reload')
             command = _cmd.format(server=server, conf=config_file)
-        elif status == "error":
+        elif status == "down":
             _cmd = (r'sed --follow-symlinks -ri '
                     r'"s/(.*\bserver\b\s+?\b{server}\b.*)/#\1/g" {conf}'
                     r'&&nginx -t&&nginx -s reload')
@@ -64,74 +105,84 @@ class _RemoteNGINX(object):
             # 先检查当前主机是否已经在下线状态,匹配成功说明已经下线，忽略，未匹配到就执行cmd
             command = "{check}||({cmd})".format(check=check_cmd, cmd=_cmd.format(server=server, conf=config_file))
         else:
-            raise NoSupportGatewayError("Only support up or down status")
+            raise Exception("Only support up or down status")
         return bool(self._run(command))
 
 
-class _NGINXGateway(AbstractGateway):
-    """
-    NGINX作为网关层，一般会有多台，再封装一次，对外统一提供抽象的AbstractGateway
-    """
-    _cmd_fmt = """ssh {username}@{host} '{command}'"""
-    _filter_fmt = r"""sed -rn "s/.*\bserver\b(.*\b:{port}\b).*/\1/p;" {config_file}"""
+class NGINXGateway(AbstractGateway):
+    def __init__(self, data: dict, gateway_data: dict):
+        self._fetch = False
+        self._servers = set()
+        self.upstream_port = data.get("upstream_port")
+        self.config_file = data.get("config_file")
+        ssh_user = gateway_data.get("user", "None")
+        hosts = gateway_data.get("hosts", [])
+        assert data and gateway_data and hosts, "config file error, remote NGINX hosts not config"
+        self._nginxs = [_RemoteNGINX(host, ssh_user) for host in hosts]
+        assert self.config_file and isinstance(self.upstream_port, int), "no site NGINX config file"
 
-    def __init__(self, _conf: _NGINXConfig):
-        _hosts = _conf.hosts
-        if not _hosts:
-            raise CommandError("全局NGINX网关配置有误，地址不能为空")
-        _username = _conf.username
-        self._nginxs: Set[_RemoteNGINX] = {_RemoteNGINX(_host, _username) for _host in _hosts}
-
-    def get_servers(self, **kwargs) -> Set[str]:
-        backend_port = kwargs.get("backend_port")
-        config_file = kwargs.get("config_file")
-        _servers = set()
+    def get_servers(self) -> Set[str]:
+        if self._fetch:
+            return self._servers
         for ngx in self._nginxs:
-            backend_servers = ngx.get_servers(backend_port=backend_port, config_file=config_file)
-            _servers.update(backend_servers)
-        return _servers
+            servers = ngx.get_servers(self.config_file, self.upstream_port)
+            self._servers.update(servers)
+        self._fetch = True
+        return self._servers
 
-    def change_server_offline(self, server: str, **kwargs) -> None:
-        _config_file = kwargs.get("config_file")
-        log.info("通过NGINX网关对主机{}下线".format(server))
-        assert _config_file, "当使用NGINX网关时，上/下线服务器关键字参数config_file为必须"
+    def change_server_online(self, server: str):
         for ngx in self._nginxs:
-            ngx.change_server("error", _config_file, server)
+            result = ngx.change_server("up", self.config_file, server)
+            log.debug(f"change server {server} online on {ngx}, result: {result}")
 
-    def change_server_online(self, server: str, **kwargs) -> None:
-        _config_file = kwargs.get("config_file")
-        assert _config_file, "当使用NGINX网关时，上/下线服务器关键字参数config_file为必须"
+    def change_server_offline(self, server: str):
         for ngx in self._nginxs:
-            ngx.change_server("ok", _config_file, server)
+            result = ngx.change_server("down", self.config_file, server)
+            log.debug(f"change server {server} offline on {ngx}, result: {result}")
 
     def __repr__(self) -> str:
-        return "NGINXGateway(hosts={})".format(self._nginxs)
+        return f"NGINXGateway(user=root, hosts=[])"
 
 
-# TODO 后续再实现
-class _SLBGateway(AbstractGateway):
-    def __init__(self, _conf: _SLBConfig):
-        self._key = _conf.key
-        self._secret = _conf.secret
-        self._region = _conf.region
+# TODO 实现具体功能
+class AliyunSLBGateway(AbstractGateway):
+    def __init__(self, data: dict, gateway_data: dict):
+        self._fetch = False
+        self._servers = set()
+        self.id = data.get("id")
+        self.port = data.get("port")
+        key = gateway_data.get("key")
+        secret = gateway_data.get("secret")
+        region = gateway_data.get("region")
+        assert self.id and self.port and key and secret and region, "config file error"
+
+    def get_servers(self) -> Set[str]:
+        if self._fetch:
+            return self._servers
+        return set()
+
+    def change_server_offline(self, server: str):
+        pass
+
+    def change_server_online(self, server: str):
+        pass
 
     def __repr__(self) -> str:
-        return "SLBGateway(key=***,secret=***)"
+        return f"AliyunSLBGateway(key=****, secret=****)"
 
-    # TODO SLB_ID/Listen_port在获取服务时需要
-    def get_servers(self, **kwargs) -> Set[str]:
-        """
-        :param kwargs: slb_id, slb_listen_port
-        :return:
-        """
-        return set("")
 
-    def change_server_offline(self, server: str, **kwargs) -> None:
-        slb_id = kwargs.get("slb_id")
-        slb_listen_port = kwargs.get("slb_listen_port")
-        assert slb_id and slb_listen_port, "SLB网关上/下线时，slb_id与slb_listen_port关键字参数为必须"
-
-    def change_server_online(self, server: str, **kwargs) -> None:
-        slb_id = kwargs.get("slb_id")
-        slb_listen_port = kwargs.get("slb_listen_port")
-        assert slb_id and slb_listen_port, "SLB网关上/下线时，slb_id与slb_listen_port关键字参数为必须"
+class GatewayFactory(_Single, AbstractGatewayFactory):
+    @staticmethod
+    def get_gateway(site_conf_data: dict, gateway_data: dict) -> AbstractGateway:
+        backend = site_conf_data.get("gateway", {})
+        backend_type = backend.get("type", "None").lower()
+        if backend_type == "nginx":
+            nginx_data = gateway_data.get("nginx")
+            return NGINXGateway(backend, nginx_data)
+        elif backend_type == "static":
+            return StaticGateway(backend)
+        elif backend_type == "slb":
+            slb_data = gateway_data.get("slb")
+            return AliyunSLBGateway(backend, slb_data)
+        else:
+            raise Exception("what this gateway?")
