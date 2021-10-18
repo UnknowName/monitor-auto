@@ -1,7 +1,7 @@
-FROM python:3.7-alpine
+FROM python:3.8-alpine
 ENV APP_HOME=/opt/app \
     TZ=Asia/Shanghai \
-    PATH=${APP_HOME}/bin:$PATH
+    PATH=${APP_HOME}/bin:$PATH \
     CRYPTOGRAPHY_DONT_BUILD_RUST=1
 RUN mkdir -p /opt/app/src
 ADD ./Pipfile /opt/app/src
@@ -21,7 +21,7 @@ RUN adduser -D -u 120002 -h /opt/app/ app \
 ADD ./v2 /opt/app/src
 # 如果要通过NGINX获取后端Servers，取消注释
 # ADD ./id_rsa /opt/app/.ssh/id_rsa
-RUN chown -R app:app /opt/app \
-    && chmod 600 /opt/app/.ssh/*
+RUN chown -R app:app /opt/app
+    # && chmod 600 /opt/app/.ssh/*
 USER app
 CMD ["python", "-u", "main.py"]
