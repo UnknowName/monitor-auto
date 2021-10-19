@@ -17,6 +17,32 @@ class _Single(metaclass=ABCMeta):
         return cls._instance
 
 
+class SimpleLog(_Single):
+    """
+    日志模块简单封装下
+    """
+    _fmt = logging.Formatter(
+        '%(asctime)s %(module)s %(threadName)s %(levelname)s %(message)s'
+    )
+
+    def __init__(self, name, filename=None):
+        self._logger = logging.getLogger(name)
+        self._logger.setLevel(logging.DEBUG)
+        ch = logging.StreamHandler()
+        ch.setLevel(logging.DEBUG)
+        ch.setFormatter(self._fmt)
+        self._logger.addHandler(ch)
+        if filename:
+            fh = logging.handlers.TimedRotatingFileHandler(filename, 'D', 1, 7)
+            fh.setLevel(logging.DEBUG)
+            fh.setFormatter(self._fmt)
+            self._logger.addHandler(fh)
+
+    @property
+    def log(self):
+        return self._logger
+
+
 class AbstractHostRecord(metaclass=ABCMeta):
     @abstractmethod
     def is_valid(self) -> bool:
@@ -47,6 +73,9 @@ class AbstractAsyncNotifies(metaclass=ABCMeta):
         pass
 
 
+_log = SimpleLog(__name__).log
+
+
 class _AsyncDDingNotify(AbstractAsyncNotify):
     _send_fmt = "https://oapi.dingtalk.com/robot/send?access_token={token}"
 
@@ -61,7 +90,10 @@ class _AsyncDDingNotify(AbstractAsyncNotify):
             }
         }
         async with aiohttp.request('POST', self.send_api, json=msgs) as resp:
-            return await resp.json()
+            resp = await resp.json()
+            if resp["errmsg"] != "":
+                _log.warning("dding return {}".format(resp))
+            return resp
 
 
 class AsyncNotify(_Single, AbstractAsyncNotifies):
@@ -81,32 +113,6 @@ class AsyncNotify(_Single, AbstractAsyncNotifies):
 
     def __repr__(self) -> str:
         return "AsyncNotify()"
-
-
-class SimpleLog(_Single):
-    """
-    日志模块简单封装下
-    """
-    _fmt = logging.Formatter(
-        '%(asctime)s %(module)s %(threadName)s %(levelname)s %(message)s'
-    )
-
-    def __init__(self, name, filename=None):
-        self._logger = logging.getLogger(name)
-        self._logger.setLevel(logging.DEBUG)
-        ch = logging.StreamHandler()
-        ch.setLevel(logging.DEBUG)
-        ch.setFormatter(self._fmt)
-        self._logger.addHandler(ch)
-        if filename:
-            fh = logging.handlers.TimedRotatingFileHandler(filename, 'D', 1, 7)
-            fh.setLevel(logging.DEBUG)
-            fh.setFormatter(self._fmt)
-            self._logger.addHandler(fh)
-
-    @property
-    def log(self):
-        return self._logger
 
 
 class NotifyFactory(_Single):
