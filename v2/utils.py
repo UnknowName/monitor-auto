@@ -146,7 +146,7 @@ class HostRecord(AbstractHostRecord):
         return time.time() >= self.next_action_time
 
     def is_notify(self) -> bool:
-        return self.is_action()
+        return time.time() >= self.next_notify_time
 
     def update(self, v: int) -> None:
         if self.is_valid():

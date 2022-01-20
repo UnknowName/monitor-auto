@@ -4,7 +4,7 @@ default:
   timeout: 5
   max_failed: 5
   path: /
-  # 自动干预间隔时间，防止恶性循环
+  # 自动干预间隔时间，防止恶性循环，同时用于通知发送的间隔时间
   auto_interval: 200
   max_inactive: 1
   recover: False

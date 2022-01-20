@@ -162,6 +162,7 @@ async def main():
                             info=site.recover.type, total=len(error_hosts)
                         )
                     )
+                # TODO 发送时间加个间隔或者只发送一条
                 elif _action_type == "notify":
                     log.info(f"发送主机{host}异常通知信息")
                     await notify.send_msgs(
