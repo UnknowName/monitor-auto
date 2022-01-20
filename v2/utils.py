@@ -90,10 +90,17 @@ class _AsyncDDingNotify(AbstractAsyncNotify):
             }
         }
         async with aiohttp.request('POST', self.send_api, json=msgs) as resp:
-            resp = await resp.json()
-            if resp["errmsg"] != "":
-                _log.warning("dding return {}".format(resp))
-            return resp
+            try:
+                if resp.status == 200 and resp.headers.get("Content-Type", "") == "application/json":
+                    response = await resp.json()
+                else:
+                    text = await resp.text()
+                    response = dict(errcode=500, errmsg=text)
+            except Exception as e:
+                response = dict(errcode=504, errmsg=str(e))
+            if response["errcode"] != 0:
+                _log.warning("dding send failed. return {}".format(response["errmsg"]))
+            return response["errmsg"]
 
 
 class AsyncNotify(_Single, AbstractAsyncNotifies):
@@ -147,5 +154,3 @@ class HostRecord(AbstractHostRecord):
         else:
             self.count = v
         self.expire_time = time.time() + self.duration
-
-
