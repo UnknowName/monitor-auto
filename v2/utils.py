@@ -135,9 +135,17 @@ class HostRecord(AbstractHostRecord):
         self.expire_time = time.time() + duration
         self.next_action_time = time.time() + auto_interval
         self.next_notify_time = time.time() + auto_interval
+        self._last_status = 200
 
     def __repr__(self) -> str:
         return f"HostRecord(count={self.count})"
+
+    @property
+    def last_status(self) -> int:
+        return self._last_status
+
+    def set_status(self, status: int) -> None:
+        self._last_status = status
 
     def is_valid(self) -> bool:
         return time.time() <= self.expire_time

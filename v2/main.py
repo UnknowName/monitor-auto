@@ -17,6 +17,13 @@ def get_time() -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S")
 
 
+class ErrorRecord(object):
+    def __init__(self, host: str, status: int, action: str):
+        self.host = host
+        self.status = status
+        self.action = action
+
+
 class AsyncCheck(object):
     @staticmethod
     async def _get_status(hostname: str, host: str, path: str, timeout: int) -> Tuple[int, str]:
@@ -76,6 +83,8 @@ class SiteRecord(object):
                 else:
                     # 初次，之前未记录
                     self._record[host] = HostRecord(self.conf.duration, self.conf.auto_interval)
+                # 更新最后状态
+                self._record[host].set_status(status)
             else:
                 # 状态码是正常的情况,如果存在，那就一直减少到0
                 if host in self._record and self._record[host].count > 0:
@@ -92,8 +101,8 @@ class SiteRecord(object):
         results.update(self._inactive)
         return results
 
-    async def get_action(self):
-        results = list()
+    async def get_results(self) -> List[ErrorRecord]:
+        results: List[ErrorRecord] = list()
         for host, record in self._record.copy().items():
             if record.count >= self.max_failed:
                 log.info("{}超过最大失败的次数,检查是否满足下线条件".format(host))
@@ -101,7 +110,8 @@ class SiteRecord(object):
                     log.info("{}已下线的主机还未恢复，等待下个动作的周期时间再执行相关动作".format(host))
                     if record.is_action():
                         record.next_action_time = time.time() + self.auto_inter
-                        results.append(("offline", host))
+                        error_record = ErrorRecord(host, record.last_status, "offline")
+                        results.append(error_record)
                     else:
                         log.info("{}不满足条件: 操作的间隔时间未到，忽略此次动作".format(host))
                 else:
@@ -109,19 +119,22 @@ class SiteRecord(object):
                         log.info("{}满足条件：下线主机数在范围内".format(host))
                         record.next_action_time = time.time() + self.auto_inter
                         self._inactive.add(host)
-                        results.append(("offline", host))
+                        error_record = ErrorRecord(host, record.last_status, "offline")
+                        results.append(error_record)
                     else:
                         log.info("{}不满足条件: 下线主机过多".format(host))
                         # 通知加一个间隔时间，防止太频繁
                         if record.is_notify():
                             record.next_notify_time = time.time() + self.auto_inter
-                            results.append(("notify", host))
+                            error_record = ErrorRecord(host, record.last_status, "notify")
+                            results.append(error_record)
             else:
                 # 记录没有大于，有可能是等于0或者1-7，更新计数
                 if record.count == 0 and host in self._inactive:
                     log.info("{}之前异常，现在恢复。将执行上线".format(host))
                     self._inactive.remove(host)
-                    results.append(("online", host))
+                    ok_record = ErrorRecord(host, record.last_status, "online")
+                    results.append(ok_record)
                 if record.count == 0:
                     del self._record[host]
         return results
@@ -132,7 +145,9 @@ async def main():
     notify = conf.notify
     sites = conf.sites
     # 检查结果记录
-    records = {site.name: SiteRecord(site) for site in sites}
+    records: Dict[str, SiteRecord] = {site.name: SiteRecord(site) for site in sites}
+    msg_fmt = "Time:\t{time}\nDomain:\t{site}\nErrHosts:\t{hosts}\nInfo:\t{info},latest status {status}\n"
+    "TotalError:\t{total}"
     while True:
         for site in sites:
             if not site.servers:
@@ -141,50 +156,52 @@ async def main():
             task = AsyncCheck().checks(site.name, site.path, site.servers, site.timeout)
             result = await task
             await records[site.name].update(result)
-            actions = await records[site.name].get_action()
-            msg_fmt = "Time:\t{time}\nDomain:\t{site}\nErrHosts:\t{hosts}\nInfo:\t{info}\nTotalError:\t{total}"
+            check_results = await records[site.name].get_results()
             error_hosts = records[site.name].get_error_hosts()
             hosts = "\n\t{}".format("\n\t".join(error_hosts))
-            for _action_type, host in actions:
-                if _action_type == "offline":
+            for err_record in check_results:
+                if err_record.action == "offline":
                     if site.recover.enable:
-                        log.info(f"使用网关{site.gateway}对主机{host}下线")
-                        site.gateway.change_server_offline(host)
-                        action = ActionFactory.create_action(site, host)
+                        log.info(f"使用网关{site.gateway}对主机{err_record.host}下线")
+                        site.gateway.change_server_offline(err_record.host)
+                        action = ActionFactory.create_action(site, err_record.host)
                         log.info("启动Action线程....")
                         action.start()
                     if not site.recover.enable:
                         site.recover.type = "error occur"
-                    log.info(f"发送{host}异常通知信息")
+                    log.info(f"发送{err_record.host}异常通知信息")
                     await notify.send_msgs(
                         msg_fmt.format(
                             time=get_time(), site=site.name, hosts=hosts,
-                            info=site.recover.type, total=len(error_hosts)
+                            info=f"{err_record.host} {site.recover.type}",
+                            status=f"{err_record.status}",
+                            total=len(error_hosts)
                         )
                     )
-                # TODO 发送时间加个间隔或者只发送一条
-                elif _action_type == "notify":
-                    log.info(f"发送主机{host}异常通知信息")
+                elif err_record.action == "notify":
+                    log.info(f"发送主机{err_record.host}异常通知信息")
                     await notify.send_msgs(
                         msg_fmt.format(
                             time=get_time(), site=site.name, hosts=hosts,
-                            info=f"{host} Error Occur", total=len(error_hosts)
+                            info=f"{err_record.host} Error Occur",
+                            status=f"{err_record.status}",
+                            total=len(error_hosts)
                         )
                     )
-                elif _action_type == "online":
+                elif err_record.action == "online":
                     if site.recover.enable:
-                        log.info(f"通过网关{site.gateway}对主机{host}进行上线")
-                        site.gateway.change_server_online(host)
+                        log.info(f"通过网关{site.gateway}对主机{err_record.host}进行上线")
+                        site.gateway.change_server_online(err_record.host)
                     # 恢复后发送信息
                     await notify.send_msgs(
                         msg_fmt.format(
                             time=get_time(), site=site.name, hosts=hosts,
-                            info=f"{host} Recover", total=len(error_hosts)
+                            info=f"{err_record.host} Recover", total=len(error_hosts)
                         )
                     )
             # 主机上/下线，重启站点动作在这里完成，避免SiteConfig对象到处传
         time.sleep(conf.check_interval)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     asyncio.run(main())

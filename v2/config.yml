@@ -24,7 +24,7 @@ sites:
       config_file: /etc/nginx/conf.d/www.aaa.com.conf
 
   - site: test.bbb.com
-    max_failed: 12
+    max_failed: 7
     timeout: 3
     gateway:
       type: static
