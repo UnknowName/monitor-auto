@@ -195,7 +195,7 @@ async def main():
                     # 恢复后发送信息
                     await notify.send_msgs(
                         msg_fmt.format(
-                            time=get_time(), site=site.name, hosts=hosts,
+                            time=get_time(), site=site.name, hosts=hosts, status=200,
                             info=f"{err_record.host} Recover", total=len(error_hosts)
                         )
                     )
