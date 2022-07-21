@@ -14,6 +14,7 @@ DEFAULT_INTER = 300
 DEFAULT_PATH = "/"
 DEFAULT_RECOVER = False
 DEFAULT_CHECK_INTERVAL = 1
+DEFAULT_METHOD = "get"
 log = SimpleLog(__name__).log
 
 
@@ -27,6 +28,7 @@ class _DefaultConfig(_Single):
         self.max_inactive = data.get("max_inactive", DEFAULT_MAX_INACTIVE)
         self.recover = data.get("recover", DEFAULT_RECOVER)
         self.check_interval = data.get("check_interval", DEFAULT_CHECK_INTERVAL)
+        self.check_method = data.get("check_method", DEFAULT_METHOD)
         assert isinstance(self.max_failed, int) \
                and isinstance(self.duration, int) \
                and isinstance(self.timeout, int)   \
@@ -67,6 +69,10 @@ class SiteConfig(object):
         else:
             self.recover = _RecoverConfig(dict())
         self._gateway = GatewayFactory.get_gateway(site_data, gateway_data)
+        self.method = site_data.get("check_method") if site_data.get("check_method") else default.check_method
+        self.post_data = site_data.get("post_data")
+        if self.method.lower() == "post" and not self.post_data:
+            log.warning(f"{self.name} check method is POST, but POST data is None")
 
     def __repr__(self) -> str:
         return f"SiteConfig(name={self.name})"
@@ -118,5 +124,5 @@ if __name__ == '__main__':
     conf = AppConfig()
     log.info(conf.notify)
     for site in conf.sites:
-        log.info(f"{site.name}")
+        log.info(f"{site.name}, {site.post_data}")
     # assert isinstance("2", int)

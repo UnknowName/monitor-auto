@@ -24,6 +24,55 @@ class ErrorRecord(object):
         self.action = action
 
 
+class SiteCheck(object):
+    def __init__(self, hostname: str, path: str, timeout: int, method: str, servers: List[str], data: dict = None):
+        self.hostname = hostname
+        self.path = path
+        self.timeout = aiohttp.ClientTimeout(total=timeout)
+        self.method = method
+        self.servers = servers
+        self.data = data if data else {}
+
+    async def _get_check(self, session: aiohttp.ClientSession, server: str) -> Tuple[int, str]:
+        try:
+            async with session.get(f"http://{server}/{self.path}") as resp:
+                return resp.status, server
+        except asyncio.exceptions.TimeoutError:
+            log.debug(f"{server} check timeout")
+            return 504, server
+
+    async def _post_check(self, session: aiohttp.ClientSession, server: str) -> Tuple[int, str]:
+        try:
+            async with session.post(f"http://{server}/{self.path}", data=self.data) as resp:
+                return resp.status, server
+        except asyncio.exceptions.TimeoutError:
+            log.debug(f"{server} check timeout")
+            return 504, server
+
+    async def _head_check(self, session: aiohttp.ClientSession, server: str) -> Tuple[int, str]:
+        try:
+            async with session.head(f"http://{server}/{self.path}") as resp:
+                return resp.status, server
+        except asyncio.exceptions.TimeoutError:
+            log.debug(f"{server} check timeout")
+            return 504, server
+
+    async def check_servers(self):
+        headers = dict(Host=self.hostname)
+        async with aiohttp.ClientSession(headers=headers, timeout=self.timeout) as session:
+            if self.method.lower() == "get":
+                _tasks = [self._get_check(session, server) for server in self.servers]
+            elif self.method.lower() == "post":
+                _tasks = [self._post_check(session, server) for server in self.servers]
+            elif self.method.lower() == "head":
+                _tasks = [self._head_check(session, server) for server in self.servers]
+            else:
+                raise "no support check method"
+            _dones, _ = await asyncio.wait(_tasks)
+            results = [_done.result() for _done in _dones]
+            return results
+
+
 class AsyncCheck(object):
     @staticmethod
     async def _get_status(hostname: str, host: str, path: str, timeout: int) -> Tuple[int, str]:
@@ -153,7 +202,9 @@ async def main():
             if not site.servers:
                 log.warning("{} 无待检测服务器".format(site.name))
                 continue
-            task = AsyncCheck().checks(site.name, site.path, site.servers, site.timeout)
+            # task = AsyncCheck().checks(site.name, site.path, site.servers, site.timeout)
+            task = SiteCheck(hostname=site.name, path=site.path, timeout=site.timeout,
+                             method=site.method, servers=site.servers, data=site.post_data).check_servers()
             result = await task
             await records[site.name].update(result)
             check_results = await records[site.name].get_results()

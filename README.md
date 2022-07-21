@@ -53,6 +53,7 @@ sites:
     max_failed: 12
     timeout: 3
     gateway:
+     # 指定后端servers，表示不从网关中获取
       type: static
       servers:
       - 128.0.100.171:80

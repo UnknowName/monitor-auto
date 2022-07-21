@@ -9,6 +9,7 @@ default:
   max_inactive: 1
   recover: False
   check_interval: 1
+  check_method: get
 
 sites:
   - site: www.aaa.com
@@ -26,6 +27,10 @@ sites:
   - site: test.bbb.com
     max_failed: 7
     timeout: 3
+    check_method: post
+    check_data:
+      key1: value1
+      key2: value2
     gateway:
       type: static
       servers:
