@@ -1,5 +1,5 @@
 monitor:
-  image: monitor-auto
+  image: unknowname/monitor-auto
   container_name: monitor-auto
   net: host
   environment:

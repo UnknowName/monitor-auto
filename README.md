@@ -52,6 +52,10 @@ sites:
   - site: test.bbb.com
     max_failed: 12
     timeout: 3
+    check_method: post
+    post_data:
+      key1: value1
+      key2: value2
     gateway:
      # 指定后端servers，表示不从网关中获取
       type: static

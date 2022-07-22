@@ -72,7 +72,7 @@ class SiteConfig(object):
         self.method = site_data.get("check_method") if site_data.get("check_method") else default.check_method
         self.post_data = site_data.get("post_data")
         if self.method.lower() == "post" and not self.post_data:
-            log.warning(f"{self.name} check method is POST, but POST data is None")
+            log.warning(f"{self.name} check method is POST, but post_data is None")
 
     def __repr__(self) -> str:
         return f"SiteConfig(name={self.name})"

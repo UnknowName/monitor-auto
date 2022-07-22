@@ -28,7 +28,7 @@ sites:
     max_failed: 7
     timeout: 3
     check_method: post
-    check_data:
+    post_data:
       key1: value1
       key2: value2
     gateway:
