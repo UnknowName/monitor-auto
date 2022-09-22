@@ -1,4 +1,5 @@
 default:
+  log_level: info # info|debug/warn/error
   # 60秒内累计7次
   duration: 60
   timeout: 5
@@ -23,6 +24,13 @@ sites:
       type: nginx
       upstream_port: 9090
       config_file: /etc/nginx/conf.d/www.aaa.com.conf
+
+  - site: boss.sissyun.com.cn
+    path: /swagger/index.html
+    gateway:
+      type: static
+      servers:
+        - boss.sissyun.com.cn
 
   - site: test.bbb.com
     max_failed: 7

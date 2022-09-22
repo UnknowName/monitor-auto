@@ -11,6 +11,7 @@ from config import AppConfig, SiteConfig
 
 log = SimpleLog(__name__).log
 conf = AppConfig("config.yml")
+log.setLevel(conf.log_level)
 
 
 def get_time() -> str:
@@ -35,26 +36,32 @@ class SiteCheck(object):
 
     async def _get_check(self, session: aiohttp.ClientSession, server: str) -> Tuple[int, str]:
         try:
-            async with session.get(f"http://{server}/{self.path}") as resp:
+            async with session.get(f"http://{server}{self.path}") as resp:
+                if resp.status > 400:
+                    log.info(f"http://{server}{self.path}, {resp.status}")
                 return resp.status, server
         except asyncio.exceptions.TimeoutError:
-            log.debug(f"{server} check timeout")
+            log.debug(f"http://{server}{self.path} check timeout")
             return 504, server
 
     async def _post_check(self, session: aiohttp.ClientSession, server: str) -> Tuple[int, str]:
         try:
-            async with session.post(f"http://{server}/{self.path}", data=self.data) as resp:
+            async with session.post(f"http://{server}{self.path}", data=self.data) as resp:
+                if resp.status > 400:
+                    log.info(f"http://{server}{self.path}, {resp.status}")
                 return resp.status, server
         except asyncio.exceptions.TimeoutError:
-            log.debug(f"{server} check timeout")
+            log.debug(f"http://{server}{self.path} check timeout")
             return 504, server
 
     async def _head_check(self, session: aiohttp.ClientSession, server: str) -> Tuple[int, str]:
         try:
-            async with session.head(f"http://{server}/{self.path}") as resp:
+            async with session.head(f"http://{server}{self.path}") as resp:
+                if resp.status > 400:
+                    log.info(f"http://{server}{self.path}, {resp.status}")
                 return resp.status, server
         except asyncio.exceptions.TimeoutError:
-            log.debug(f"{server} check timeout")
+            log.debug(f"http://{server}{self.path} check timeout")
             return 504, server
 
     async def check_servers(self):

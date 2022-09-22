@@ -1,3 +1,4 @@
+import logging
 from typing import List
 
 import yaml
@@ -15,11 +16,25 @@ DEFAULT_PATH = "/"
 DEFAULT_RECOVER = False
 DEFAULT_CHECK_INTERVAL = 1
 DEFAULT_METHOD = "get"
+DEFAULT_LOG_LEVEL = logging.INFO
 log = SimpleLog(__name__).log
 
 
 class _DefaultConfig(_Single):
     def __init__(self, data: dict):
+        _level = data.get("log_level", None)
+        if _level is None:
+            self.log_level = DEFAULT_LOG_LEVEL
+        elif isinstance(_level, str) and _level.upper() == "INFO":
+            self.log_level = logging.INFO
+        elif isinstance(_level, str) and _level.upper() == "DEBUG":
+            self.log_level = logging.DEBUG
+        elif isinstance(_level, str) and _level.upper() == "WARN":
+            self.log_level = logging.WARN
+        elif isinstance(_level, str) and _level.upper() == "ERROR":
+            self.log_level = logging.ERROR
+        else:
+            raise f"un know log level {_level}"
         self.max_failed = data.get("max_failed", DEFAULT_MAX_FAILED)
         self.duration = data.get("duration", DEFAULT_DURATION)
         self.timeout = data.get("timeout", DEFAULT_TIMEOUT)
@@ -101,6 +116,10 @@ class AppConfig(_Single):
         return f"AppConfig()"
 
     @property
+    def log_level(self):
+        return self._default.log_level
+
+    @property
     def check_interval(self) -> int:
         return self._default.check_interval
 
@@ -126,3 +145,5 @@ if __name__ == '__main__':
     for site in conf.sites:
         log.info(f"{site.name}, {site.post_data}")
     # assert isinstance("2", int)
+    level = "info"
+
